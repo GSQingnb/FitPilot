@@ -1,4 +1,4 @@
-# EchoMind 智能客服系统 — Docker 多阶段构建
+# FitPilot AI 健身助手 — Docker 多阶段构建
 # 目标：生产镜像尽量精简，开发镜像包含调试工具
 
 # ── 阶段 1：基础环境 ──────────────────────────────────────────────────────────
@@ -31,6 +31,7 @@ RUN mkdir -p /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2 && \
     cd /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2 && \
     tar -xzf onnx.tar.gz && \
     rm onnx.tar.gz
+
 
 # ── 阶段 3：生产镜像 ──────────────────────────────────────────────────────────
 FROM base AS production
