@@ -1,0 +1,98 @@
+# =========================
+# Environment and secrets
+# =========================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials/
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.python-version
+
+.venv/
+venv/
+env/
+ENV/
+.venv-win/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# =========================
+# Node.js / React / Next.js
+# =========================
+node_modules/
+.next/
+out/
+dist/
+build/
+coverage/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local frontend environment files
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# =========================
+# Runtime data
+# =========================
+logs/
+*.log
+uploads/
+tmp/
+temp/
+
+data/chroma/
+data/redis/
+data/eval/
+chroma_data/
+redis_data/
+
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+*.iml
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Miscellaneous
+# =========================
+*.bak
+*.tmp
+*.swp
