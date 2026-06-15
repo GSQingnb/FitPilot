@@ -1,0 +1,273 @@
+"""Seed the exercises table with standard fitness exercises.
+
+Usage:
+    python -m database.seed
+
+Idempotent: running multiple times won't create duplicates.
+"""
+
+import asyncio
+import os
+import sys
+
+# Ensure project root is in path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from database.session import AsyncSessionLocal
+from database.repositories.exercise_repository import ExerciseRepository
+
+SEED_EXERCISES = [
+    {
+        "name": "杠铃深蹲",
+        "name_en": "Barbell Back Squat",
+        "primary_muscle": "quadriceps",
+        "secondary_muscles": ["glutes", "hamstrings", "core", "lower_back"],
+        "equipment": "barbell",
+        "difficulty": "intermediate",
+        "movement_pattern": "squat",
+        "instructions": "将杠铃置于斜方肌上方（高杠），站距略宽于肩，脚尖外八15-30度。下蹲时膝盖沿脚尖方向，髋部向后向下坐，大腿与地面平行。保持脊柱中立，核心收紧。驱动时全掌发力，膝盖不要内扣。",
+        "common_mistakes": "脚跟离地、膝盖内扣、上半身前倾过多（屁股眨眼）、深度不足",
+        "safety_notes": "初学者建议从高脚杯深蹲开始。如有膝盖或下背不适，咨询专业人员后再进行负重深蹲。使用保护杠或保护者。",
+    },
+    {
+        "name": "杠铃卧推",
+        "name_en": "Barbell Bench Press",
+        "primary_muscle": "chest",
+        "secondary_muscles": ["front_delts", "triceps"],
+        "equipment": "barbell",
+        "difficulty": "intermediate",
+        "movement_pattern": "push_horizontal",
+        "instructions": "躺在平板凳上，眼睛位于杠铃正下方。握距约1.5倍肩宽，肩胛骨收紧下沉，脚踩稳地面。下放杠铃至下胸位置（乳头线），肘部与躯干呈45-75度。推起时杠铃轨迹略向头部方向。",
+        "common_mistakes": "握距过宽增加肩关节压力、肘部打开过大（90度）、臀部离开凳面、半程卧推不触胸",
+        "safety_notes": "大重量卧推务必使用保护者或保护杠。肩部不适时应减小重量或改用哑铃卧推。",
+    },
+    {
+        "name": "哑铃卧推",
+        "name_en": "Dumbbell Bench Press",
+        "primary_muscle": "chest",
+        "secondary_muscles": ["front_delts", "triceps"],
+        "equipment": "dumbbell",
+        "difficulty": "beginner",
+        "movement_pattern": "push_horizontal",
+        "instructions": "仰卧平板凳，双手各持哑铃置于胸前，掌心朝前。推起哑铃至手臂伸直但不锁死。下放时肘部与躯干呈45-75度，哑铃降至胸部两侧。保持肩胛骨收紧。",
+        "common_mistakes": "哑铃下降不均衡、肘部过度外展、肩胛骨未收紧",
+        "safety_notes": "相比杠铃卧推对肩关节更友好。选择合适的重量，不要硬撑。",
+    },
+    {
+        "name": "俯卧撑",
+        "name_en": "Push Up",
+        "primary_muscle": "chest",
+        "secondary_muscles": ["front_delts", "triceps", "core"],
+        "equipment": "bodyweight",
+        "difficulty": "beginner",
+        "movement_pattern": "push_horizontal",
+        "instructions": "双手撑地与肩同宽或略宽，身体从头到脚呈一条直线。下降时肘部向身体后方约45度，胸部接近地面。推起时保持核心收紧，身体不塌腰。",
+        "common_mistakes": "塌腰、臀部过高、肘部过度外展、头部前伸",
+        "safety_notes": "手腕不适可改用拳头支撑或使用俯卧撑把手。无法完成标准俯卧撑时可从跪姿开始。",
+    },
+    {
+        "name": "传统硬拉",
+        "name_en": "Conventional Deadlift",
+        "primary_muscle": "lower_back",
+        "secondary_muscles": ["glutes", "hamstrings", "traps", "forearms"],
+        "equipment": "barbell",
+        "difficulty": "intermediate",
+        "movement_pattern": "hinge",
+        "instructions": "站距与髋同宽，杠铃位于脚掌中段上方。握距在膝盖外侧。下放时髋部向后推，小腿尽量保持垂直，杠铃贴近身体。拉起时保持脊柱中立，先伸膝再伸髋。锁定时臀部收紧，不要过度后仰。",
+        "common_mistakes": "圆背（最危险）、杠铃远离身体、启动时臀位过高、锁定过度后仰",
+        "safety_notes": "已有椎间盘问题的人群应在医生或物理治疗师评估后再决定是否进行硬拉。建议使用六角杠铃硬拉作为更安全的选择。",
+    },
+    {
+        "name": "罗马尼亚硬拉",
+        "name_en": "Romanian Deadlift",
+        "primary_muscle": "hamstrings",
+        "secondary_muscles": ["glutes", "lower_back"],
+        "equipment": "barbell",
+        "difficulty": "intermediate",
+        "movement_pattern": "hinge",
+        "instructions": "双手持杠铃于大腿前方，膝盖微屈。髋部向后推，上半身前倾，杠铃沿大腿前方下滑至小腿中段。保持脊柱中立，感受腘绳肌拉伸。用臀部和腘绳肌发力将髋部推回起始位置。",
+        "common_mistakes": "膝盖过度弯曲变成深蹲、圆背、杠铃远离腿部",
+        "safety_notes": "相对于传统硬拉对腰椎压力较小。先从轻重量开始掌握动作模式。",
+    },
+    {
+        "name": "引体向上",
+        "name_en": "Pull Up",
+        "primary_muscle": "back",
+        "secondary_muscles": ["biceps", "rear_delts", "core"],
+        "equipment": "bodyweight",
+        "difficulty": "intermediate",
+        "movement_pattern": "pull_vertical",
+        "instructions": "双手正握（掌心朝前），握距略宽于肩。从完全悬垂位置开始，肩胛骨下沉，用背部力量将身体拉起至下巴超过杠。控制下降，不要完全放松肩胛。",
+        "common_mistakes": "过度使用手臂力量、摆动身体借力、下降过快、行程不足",
+        "safety_notes": "肩关节有伤者避免宽握。无法完成时可使用弹力带辅助或高位下拉替代。",
+    },
+    {
+        "name": "高位下拉",
+        "name_en": "Lat Pulldown",
+        "primary_muscle": "back",
+        "secondary_muscles": ["biceps", "rear_delts"],
+        "equipment": "cable",
+        "difficulty": "beginner",
+        "movement_pattern": "pull_vertical",
+        "instructions": "坐于高位下拉机前，双手握杆略宽于肩。略微后倾，将横杆拉至上胸位置，肩胛骨充分收缩。控制返回，不要完全伸直手臂。",
+        "common_mistakes": "杆拉至颈后（增加肩关节风险）、身体过度后仰、使用惯性",
+        "safety_notes": "颈后下拉会增加肩关节压力，不推荐。保持动作可控，避免惯性借力。",
+    },
+    {
+        "name": "杠铃划船",
+        "name_en": "Barbell Row",
+        "primary_muscle": "back",
+        "secondary_muscles": ["biceps", "rear_delts", "lower_back"],
+        "equipment": "barbell",
+        "difficulty": "intermediate",
+        "movement_pattern": "pull_horizontal",
+        "instructions": "双手正握杠铃，站距与髋同宽。髋部后倾，上半身前倾至约45度，保持脊柱中立。将杠铃沿大腿前方拉至下腹部，肘部贴近身体，肩胛骨充分收缩。控制下放。",
+        "common_mistakes": "上半身前倾角度过大、身体上下晃动借力、圆背",
+        "safety_notes": "下背不适可用胸部支撑式划船机替代。保持核心收紧保护腰椎。",
+    },
+    {
+        "name": "哑铃划船",
+        "name_en": "Dumbbell Row",
+        "primary_muscle": "back",
+        "secondary_muscles": ["biceps", "rear_delts"],
+        "equipment": "dumbbell",
+        "difficulty": "beginner",
+        "movement_pattern": "pull_horizontal",
+        "instructions": "单手撑在凳子上，同侧膝盖跪于凳面，另一只脚踩地支撑。持哑铃手臂自然垂直，将哑铃拉至髋部侧面，肘部贴近身体。最高点收缩背阔肌，控制下放。",
+        "common_mistakes": "躯干旋转借力、肘部离开身体过远、动作行程不足",
+        "safety_notes": "保持脊柱中立，不要扭转躯干。适合初学者掌握背部发力感。",
+    },
+    {
+        "name": "杠铃肩上推举",
+        "name_en": "Barbell Overhead Press",
+        "primary_muscle": "shoulders",
+        "secondary_muscles": ["triceps", "upper_chest", "core"],
+        "equipment": "barbell",
+        "difficulty": "intermediate",
+        "movement_pattern": "push_vertical",
+        "instructions": "站立或坐姿，杠铃置于锁骨前方，握距略宽于肩。将杠铃垂直向上推至头顶上方，头部微前移让杠铃经过面部。锁定后杠铃位于头顶正上方或略后。控制下放至锁骨。",
+        "common_mistakes": "过度后仰、杠铃轨迹不直、锁定时杠铃在前方",
+        "safety_notes": "肩关节有撞击问题者应减小范围或使用哑铃替代。腰部不适可用坐姿有靠背的方式。",
+    },
+    {
+        "name": "哑铃侧平举",
+        "name_en": "Dumbbell Lateral Raise",
+        "primary_muscle": "shoulders",
+        "secondary_muscles": ["traps"],
+        "equipment": "dumbbell",
+        "difficulty": "beginner",
+        "movement_pattern": "isolation",
+        "instructions": "站姿，双手各持哑铃置于体侧，掌心相对，肘部微屈。用肩部力量将哑铃向两侧抬起至与肩同高，肘部略高于手腕。控制下放，不要完全放松。",
+        "common_mistakes": "重量过大导致借力、身体前后摇晃、手臂完全伸直",
+        "safety_notes": "用轻重量高次数，避免肩关节撞击。如有肩部弹响或疼痛，减小动作幅度。",
+    },
+    {
+        "name": "哑铃弯举",
+        "name_en": "Dumbbell Bicep Curl",
+        "primary_muscle": "biceps",
+        "secondary_muscles": ["forearms"],
+        "equipment": "dumbbell",
+        "difficulty": "beginner",
+        "movement_pattern": "isolation",
+        "instructions": "站姿或坐姿，双手各持哑铃，掌心朝前。上臂贴紧身体两侧，保持固定。屈肘将哑铃弯举至肩前，最高点收缩二头肌。控制下放至手臂几乎伸直。",
+        "common_mistakes": "身体后仰借力、上臂前移、下放过快",
+        "safety_notes": "手腕保持中立位，避免过度屈腕。选择可控重量，避免借力损伤。",
+    },
+    {
+        "name": "绳索下压",
+        "name_en": "Cable Tricep Pushdown",
+        "primary_muscle": "triceps",
+        "secondary_muscles": [],
+        "equipment": "cable",
+        "difficulty": "beginner",
+        "movement_pattern": "isolation",
+        "instructions": "面向高位滑轮，双手握住绳索或直杆。上臂贴紧身体两侧保持固定。用力将绳索向下压至手臂完全伸直，锁定收缩三头肌。控制返回到起始位置。",
+        "common_mistakes": "上臂前后摆动、身体前倾借力、动作过快",
+        "safety_notes": "保持手腕稳定。肘关节不适时减小重量和动作幅度。",
+    },
+    {
+        "name": "保加利亚分腿蹲",
+        "name_en": "Bulgarian Split Squat",
+        "primary_muscle": "quadriceps",
+        "secondary_muscles": ["glutes", "hamstrings", "core"],
+        "equipment": "dumbbell",
+        "difficulty": "intermediate",
+        "movement_pattern": "squat",
+        "instructions": "后脚搭在凳子或平台上，前脚向前迈出。双手可持哑铃置于体侧。下降时前腿膝盖沿脚尖方向，后膝接近地面但不触地。前脚发力推起。保持上半身直立。",
+        "common_mistakes": "前脚膝盖过度超过脚尖、上半身前倾、后腿距离过远或过近",
+        "safety_notes": "从自重开始练习平衡。相比杠铃深蹲脊柱负荷更小。膝痛时减小活动范围。",
+    },
+    {
+        "name": "臀桥",
+        "name_en": "Glute Bridge",
+        "primary_muscle": "glutes",
+        "secondary_muscles": ["hamstrings", "core"],
+        "equipment": "bodyweight",
+        "difficulty": "beginner",
+        "movement_pattern": "hinge",
+        "instructions": "仰卧，膝盖弯曲，双脚平放地面与髋同宽。用力收缩臀部，将髋部向上推起至身体呈一条直线。顶端保持1-2秒，缓慢下放。可在髋部放置杠铃片增加负重。",
+        "common_mistakes": "用下背而非臀部发力、脚距过宽或过窄、颈部紧张",
+        "safety_notes": "适合初学者激活臀部。下背不适通常是因为用腰代替臀发力，减小重量重新学习。",
+    },
+    {
+        "name": "平板支撑",
+        "name_en": "Plank",
+        "primary_muscle": "core",
+        "secondary_muscles": ["shoulders", "glutes"],
+        "equipment": "bodyweight",
+        "difficulty": "beginner",
+        "movement_pattern": "isolation",
+        "instructions": "俯卧，前臂撑地，肘部位于肩部正下方。脚尖踩地，身体抬起呈一条直线。收紧腹部和臀部，保持正常呼吸。保持20-60秒，逐渐延长时间。",
+        "common_mistakes": "塌腰（臀部过低）、臀部过高、憋气、头部下垂",
+        "safety_notes": "手腕或肘部不适可用拳头支撑替代前臂。下背痛通常是因为塌腰，收紧核心即可改善。",
+    },
+    {
+        "name": "卷腹",
+        "name_en": "Crunch",
+        "primary_muscle": "abs",
+        "secondary_muscles": [],
+        "equipment": "bodyweight",
+        "difficulty": "beginner",
+        "movement_pattern": "isolation",
+        "instructions": "仰卧，膝盖弯曲，脚平放地面。双手轻放于头侧或胸前。收紧腹部，将肩胛骨抬离地面（上背部离地约30度），保持下背部贴地。顶端停顿1秒，缓慢下放。",
+        "common_mistakes": "双手用力拉头、使用惯性、抬得过高带动髋屈肌",
+        "safety_notes": "颈椎不适者双手不要抱头，放在胸前或太阳穴两侧即可。腰酸表示用了腰部代偿，减小动作幅度。",
+    },
+    {
+        "name": "壶铃摇摆",
+        "name_en": "Kettlebell Swing",
+        "primary_muscle": "glutes",
+        "secondary_muscles": ["hamstrings", "lower_back", "core"],
+        "equipment": "kettlebell",
+        "difficulty": "intermediate",
+        "movement_pattern": "hinge",
+        "instructions": "双脚站距略宽于肩，壶铃置于脚前约30cm。髋部后推，双手抓壶铃把手。将壶铃从胯下向后摆动，然后用臀部爆发力向前推髋，壶铃自然摆至胸高。手臂不主动用力，动量来自髋部。",
+        "common_mistakes": "用手臂提起壶铃（而非髋部驱动）、下蹲而非髋铰链、壶铃摆动过高或过低",
+        "safety_notes": "从轻重量壶铃开始学习。保持核心收紧。腰背不适时停止，检查是否为髋部驱动力不足。",
+    },
+    {
+        "name": "箭步蹲",
+        "name_en": "Walking Lunge",
+        "primary_muscle": "quadriceps",
+        "secondary_muscles": ["glutes", "hamstrings", "core"],
+        "equipment": "bodyweight",
+        "difficulty": "beginner",
+        "movement_pattern": "squat",
+        "instructions": "站姿，一脚向前迈一大步。下降时后膝接近地面但不触地，前膝沿脚尖方向。前脚发力推回起始位置，或继续向前交替迈步。保持上半身直立。",
+        "common_mistakes": "前膝过度超过脚尖、上半身前倾、步幅过小或过大",
+        "safety_notes": "从自重开始。膝痛者减小步幅，避免前膝超出脚尖过多。可用哑铃增加负重。",
+    },
+]
+
+
+async def main():
+    async with AsyncSessionLocal() as session:
+        repo = ExerciseRepository(session)
+        added = await repo.seed_exercises(SEED_EXERCISES)
+        await session.commit()
+        total = await repo.count()
+        print(f"Seed complete: added {added} new exercises, total active: {total}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

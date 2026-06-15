@@ -35,12 +35,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BANNER = r"""
-    💪  🏋️  💪
    ╔══════════════════════╗
    ║   FitPilot  v2.0     ║
    ║   AI 健身助手         ║
    ╚══════════════════════╝
-    💪  🏋️  💪
 """
 
 # ── 全局组件（lifespan 中初始化）─────────────────────────────────────────────
@@ -207,6 +205,17 @@ class ChatResponse(BaseModel):
     latency_ms:  float
     knowledge_used: bool = False
 
+
+# ── 数据库路由（PostgreSQL 业务数据）──────────────────────────────────────────
+from api.routes.health import router as health_db_router
+from api.routes.users import router as users_router
+from api.routes.fitness_profiles import router as fitness_profiles_router
+from api.routes.exercises import router as exercises_router
+
+app.include_router(health_db_router)
+app.include_router(users_router)
+app.include_router(fitness_profiles_router)
+app.include_router(exercises_router)
 
 # ── 路由 ──────────────────────────────────────────────────────────────────────
 @app.get("/health")
