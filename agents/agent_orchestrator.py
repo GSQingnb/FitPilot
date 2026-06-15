@@ -1,19 +1,20 @@
 """
-亮点：多 Agent 路由与编排
+亮点：多 Agent 路由与编排 — FitPilot 健身领域
 
 核心问题：多 Agent 情况下如何做 Routing？
 
 路由策略（三层决策）：
   1. 意图路由 —— 根据 IntentCategory 直接映射到专属 Agent
   2. 性能路由 —— 同类 Agent 有多个时，选成功率最高、延迟最低的
-  3. 降级路由 —— 专属 Agent 不可用时，自动降级到 GeneralAgent
+  3. 降级路由 —— 专属 Agent 不可用时，自动降级到 CoachAgent
 
 并行协作：
-  - 复杂问题（如"技术问题 + 账单问题"）可同时派发给多个 Agent
+  - 复合问题（如"计划+动作"或"进度分析+计划调整"）可同时派发给多个 Agent
   - 结果由 Orchestrator 合并后返回
 
-升级机制：
-  - Agent 置信度低于阈值 → 自动升级到更高级 Agent 或转人工
+安全机制：
+  - 涉及疼痛、伤病、疾病的内容优先进入安全处理
+  - SAFETY_CONCERN 意图或包含安全关键词时，在所有回复前附加安全提示
 """
 import asyncio
 import logging
@@ -33,10 +34,9 @@ logger = logging.getLogger(__name__)
 # ── 数据结构 ──────────────────────────────────────────────────────────────────
 
 class AgentType(Enum):
-    GENERAL   = "general"    # 通用客服
-    TECHNICAL = "technical"  # 技术支持
-    BILLING   = "billing"    # 账单/退款
-    ESCALATION = "escalation" # 人工升级（占位）
+    COACH    = "coach"     # 健身教练（通用知识 + 动作说明 + 安全边界）
+    PLAN     = "plan"      # 训练计划（计划生成 + 调整）
+    PROGRESS = "progress"  # 进度分析（训练表现分析 + 恢复建议）
 
 
 @dataclass
@@ -94,6 +94,40 @@ class OrchestratorResult:
     latency_ms:  float = 0.0
 
 
+# ── 统一安全规则 ──────────────────────────────────────────────────────────────
+
+# 安全关键词：命中任一词表示需要安全处理
+_SAFETY_KEYWORDS = [
+    "刺痛", "剧烈疼痛", "胸痛", "胸口疼", "头晕", "呼吸困难", "麻木",
+    "骨折", "关节损伤", "椎间盘", "手术恢复", "手术", "医生诊断",
+    "疾病", "药物", "极端节食", "催吐", "过度训练",
+    "受伤", "扭伤", "拉伤", "康复", "伤病",
+]
+
+# 安全提示模板（可复用，避免在多个 Agent 中重复大量相同文本）
+SAFETY_DISCLAIMER = (
+    "⚠️ **安全提示**：你描述的情况可能涉及健康或医疗问题。"
+    "FitPilot 是 AI 健身助手，不能提供医疗诊断、治疗方案或康复指导。"
+    "建议你：\n"
+    "1. 停止可能加重症状的训练活动；\n"
+    "2. 咨询医生、物理治疗师或其他合格的专业人员；\n"
+    "3. 如果出现胸痛、呼吸困难、意识异常等严重症状，请及时寻求紧急医疗帮助。\n\n"
+    "以下回复仅作为一般健身信息参考，不应被视为医疗建议。\n\n"
+    "---\n\n"
+)
+
+
+def _has_safety_concern(message: str) -> bool:
+    """检测消息是否包含安全风险内容。"""
+    msg = message.lower()
+    return any(kw in msg for kw in _SAFETY_KEYWORDS)
+
+
+def _prepend_safety_disclaimer(content: str) -> str:
+    """在回复前附加安全提示。"""
+    return SAFETY_DISCLAIMER + content
+
+
 # ── 基础 Agent ────────────────────────────────────────────────────────────────
 
 class BaseAgent:
@@ -112,10 +146,14 @@ class BaseAgent:
         self.stats.total += 1
         try:
             content = await self._call_llm(req)
+            # 安全检测：消息或意图涉及安全风险时，附加安全提示
+            if (_has_safety_concern(req.message)
+                    or req.intent == IntentCategory.SAFETY_CONCERN):
+                content = _prepend_safety_disclaimer(content)
             ms = (time.monotonic() - t0) * 1000
             self.stats.success += 1
             self.stats.total_ms += ms
-            escalate = self._needs_escalation(content)
+            escalate = req.intent == IntentCategory.SAFETY_CONCERN or _has_safety_concern(req.message)
             return AgentResponse(
                 agent_type=self.agent_type,
                 content=content,
@@ -152,33 +190,60 @@ class BaseAgent:
         )
         return resp.content[0].text
 
-    def _needs_escalation(self, content: str) -> bool:
-        """检测 Agent 是否建议升级（简单关键词检测）。"""
-        keywords = ["转人工", "人工客服", "escalate", "specialist", "无法处理"]
-        return any(kw in content for kw in keywords)
 
-
-class GeneralAgent(BaseAgent):
-    agent_type    = AgentType.GENERAL
+class CoachAgent(BaseAgent):
+    """健身教练 Agent：通用知识、动作说明、安全边界。"""
+    agent_type = AgentType.COACH
     system_prompt = (
-        "你是 EchoMind 智能客服。友好、简洁地回答用户问题。"
-        "如果问题超出你的能力范围，明确说明并建议转接专业客服。"
+        "你是 FitPilot AI 健身教练。你的职责是提供一般健身信息、动作说明和训练建议。\n\n"
+        "规则：\n"
+        "- 回答清晰、简洁、可执行，使用通俗中文。\n"
+        "- 说明动作时，包含目标肌群、动作要点和常见错误。\n"
+        "- 不虚构用户没有提供的身体情况。\n"
+        "- 不把一般训练建议说成医学结论。\n"
+        "- 遇到疼痛、疾病或伤病相关内容时，明确说明你无法提供医疗诊断，"
+        "并建议用户咨询医生、物理治疗师或合格的专业人员。\n"
+        "- 明确说明你的建议仅用于一般健身信息参考。\n"
+        "- 如果用户问题超出健身范围，礼貌说明你的能力边界。"
     )
 
 
-class TechnicalAgent(BaseAgent):
-    agent_type    = AgentType.TECHNICAL
+class PlanAgent(BaseAgent):
+    """训练计划 Agent：计划生成、调整、动作替换。"""
+    agent_type = AgentType.PLAN
     system_prompt = (
-        "你是技术支持专家。专注于：故障排查、错误诊断、系统配置。"
-        "提供清晰的步骤化解决方案。遇到需要后台操作的问题，说明需要升级处理。"
+        "你是 FitPilot 训练计划专家。你的职责是根据用户目标、经验、器械和频率生成或调整训练建议。\n\n"
+        "规则：\n"
+        "- 根据用户提供的信息（目标、经验水平、每周训练天数、可用器械、每次训练时长），"
+        "生成结构化的训练建议。\n"
+        "- 当前阶段以 Markdown 文本形式输出，内容尽量结构化：\n"
+        "  训练频率、训练日安排、每个训练日的动作、组数、次数范围、休息时间、注意事项。\n"
+        "- 如果用户信息不足，主动列出缺少的信息并给出基于常见情况的默认假设。\n"
+        "- 替换动作时，说明替代动作的目标肌群、优缺点和注意事项。\n"
+        "- 遇到疼痛、疾病或伤病相关内容时，明确说明需要先咨询专业人员再安排训练。\n"
+        "- 不推荐极端或不安全的训练方法。\n"
+        "- 本阶段不将计划持久化到数据库，输出为文本建议。"
     )
 
 
-class BillingAgent(BaseAgent):
-    agent_type    = AgentType.BILLING
+class ProgressAgent(BaseAgent):
+    """进度分析 Agent：训练表现分析、停滞检测、恢复建议。"""
+    agent_type = AgentType.PROGRESS
     system_prompt = (
-        "你是账单服务专家。专注于：账单查询、退款申请、发票问题、订阅管理。"
-        "对财务问题保持准确和专业。涉及实际退款操作时，说明需要人工审核。"
+        "你是 FitPilot 训练进度分析师。你的职责是分析用户通过自然语言描述的训练表现，"
+        "给出基础调整建议。\n\n"
+        "规则：\n"
+        "- 识别用户描述中的训练数据：重量变化、次数变化、组数、RPE、训练频率、恢复感受。\n"
+        "- 判断是否存在以下情况：训练停滞（重量/次数长期不增长）、恢复不足（持续高 RPE、"
+        "疲劳感）、训练量过高、训练频率不足。\n"
+        "- 明确区分「事实数据」和「推测」：用户提供的是事实，你的分析是推测。\n"
+        "- 如果缺少关键数据（如最近 3-4 周重量、次数、组数、RPE、训练频率、睡眠），"
+        "明确指出缺少哪些数据，并说明为什么这些数据对分析重要。\n"
+        "- 给出的调整建议应具体、可操作（如：减少 10% 训练量、增加一天休息日、"
+        "降低 RPE 目标到 7-8）。\n"
+        "- 遇到疼痛、疾病或伤病相关内容时，明确说明这些症状可能导致训练表现下降，"
+        "需要优先咨询专业人员。\n"
+        "- 不把训练表现波动直接等同于伤病。"
     )
 
 
@@ -196,11 +261,15 @@ class AgentOrchestrator:
 
     # 意图 → Agent 类型的静态映射（路由表）
     _INTENT_ROUTING: Dict[IntentCategory, AgentType] = {
-        IntentCategory.TECHNICAL:  AgentType.TECHNICAL,
-        IntentCategory.BILLING:    AgentType.BILLING,
-        IntentCategory.ACCOUNT:    AgentType.BILLING,
-        IntentCategory.ESCALATION: AgentType.ESCALATION,
-        # 其余意图 → GENERAL（默认）
+        IntentCategory.GENERAL_QUESTION: AgentType.COACH,
+        IntentCategory.EXERCISE_QUERY:   AgentType.COACH,
+        IntentCategory.PLAN_GENERATION:  AgentType.PLAN,
+        IntentCategory.PLAN_ADJUSTMENT:  AgentType.PLAN,
+        IntentCategory.PROGRESS_REVIEW:  AgentType.PROGRESS,
+        IntentCategory.SAFETY_CONCERN:   AgentType.COACH,    # CoachAgent 处理安全场景
+        IntentCategory.GREETING:         AgentType.COACH,
+        IntentCategory.FEEDBACK:         AgentType.COACH,
+        # OTHER → COACH（默认）
     }
 
     def __init__(
@@ -218,9 +287,9 @@ class AgentOrchestrator:
 
         # Agent 池：每种类型可有多个实例（水平扩展）
         self._pool: Dict[AgentType, List[BaseAgent]] = {
-            AgentType.GENERAL:   [GeneralAgent(client, model)],
-            AgentType.TECHNICAL: [TechnicalAgent(client, model)],
-            AgentType.BILLING:   [BillingAgent(client, model)],
+            AgentType.COACH:    [CoachAgent(client, model)],
+            AgentType.PLAN:     [PlanAgent(client, model)],
+            AgentType.PROGRESS: [ProgressAgent(client, model)],
         }
 
     # ── 主入口 ────────────────────────────────────────────────────────────────
@@ -238,7 +307,7 @@ class AgentOrchestrator:
             req.intent  = intent_result.intent
             req.urgency = intent_result.urgency
 
-        # 复杂问题自动并行协作，例如同一句同时涉及登录故障和扣款/退款。
+        # 复杂问题自动并行协作，例如同时涉及计划生成和动作替代的问题。
         collaboration = self._collaboration_targets(req)
         if len(collaboration) > 1:
             return await self.run_parallel(req, collaboration)
@@ -249,12 +318,13 @@ class AgentOrchestrator:
         # 3. 执行（含降级）
         response = await self._execute(req, agent_type)
 
-        # 4. 升级检查
+        # 4. 升级/安全标记
+        # escalated 在健身场景中表示：需要专业人员介入（医生、物理治疗师等）
         escalated = False
-        if response.escalate or req.urgency == UrgencyLevel.CRITICAL or req.intent == IntentCategory.ESCALATION:
+        if response.escalate or req.intent == IntentCategory.SAFETY_CONCERN or _has_safety_concern(req.message):
             escalated = True
-            logger.warning(f"请求 {req.request_id} 触发升级: urgency={req.urgency}")
-            # 生产环境：此处创建工单、通知人工客服
+            logger.warning(f"请求 {req.request_id} 触发安全标记: intent={req.intent}")
+            # 生产环境：此处可记录安全事件日志
 
         return OrchestratorResult(
             request_id=req.request_id,
@@ -268,7 +338,9 @@ class AgentOrchestrator:
     async def run_parallel(self, req: Request, agent_types: List[AgentType]) -> OrchestratorResult:
         """
         并行派发给多个 Agent，合并结果。
-        适用于复杂问题（如同时涉及技术和账单）。
+        适用于健身复合问题（如"计划+动作"或"进度分析+计划调整"）。
+
+        安全风险内容优先：如果涉及安全关键词，在所有回复前附加统一安全提示。
         """
         t0 = time.monotonic()
         tasks = [self._execute(req, at) for at in agent_types]
@@ -278,9 +350,9 @@ class AgentOrchestrator:
         parts = []
         for r in responses:
             if isinstance(r, AgentResponse) and r.success:
-                parts.append(f"[{r.agent_type.value}]\n{r.content}")
+                parts.append(f"**[{r.agent_type.value}]**\n{r.content}")
 
-        combined = "\n\n".join(parts) if parts else "抱歉，所有 Agent 均处理失败。"
+        combined = "\n\n---\n\n".join(parts) if parts else "抱歉，暂无法处理您的请求，请稍后重试。"
         escalated = any(isinstance(r, AgentResponse) and r.escalate for r in responses)
 
         return OrchestratorResult(
@@ -298,37 +370,53 @@ class AgentOrchestrator:
         """
         三层路由决策：
           1. 意图映射
-          2. 紧急度覆盖（CRITICAL 直接升级）
-          3. 默认 GENERAL
+          2. 紧急度覆盖（CRITICAL/HIGH 安全风险 → CoachAgent 安全模式）
+          3. 默认 COACH
         """
-        if urgency == UrgencyLevel.CRITICAL:
-            return AgentType.ESCALATION
+        # 安全风险场景统一路由到 CoachAgent（BaseAgent.handle 会自动附加安全提示）
+        if intent == IntentCategory.SAFETY_CONCERN:
+            return AgentType.COACH
 
         if intent and intent in self._INTENT_ROUTING:
             target = self._INTENT_ROUTING[intent]
-            # 如果目标类型有可用实例则使用，否则降级
             if target in self._pool and self._pool[target]:
                 return target
 
-        return AgentType.GENERAL
+        return AgentType.COACH
 
     def _collaboration_targets(self, req: Request) -> List[AgentType]:
         """
         判断是否需要多个 Agent 并行协作。
 
-        意图识别通常只返回一个主意图；这里用领域关键词补充检测复合问题，
-        例如"登录报错且被重复扣款"需要技术和账单 Agent 同时处理。
+        健身复合问题示例：
+          - "安排三天计划 + 卧推没有杠铃怎么替代" → PlanAgent + CoachAgent
+          - "连续三周卧推没进步 + 调整下周计划" → ProgressAgent + PlanAgent
         """
         msg = req.message.lower()
+
+        # 安全风险内容优先：不参与协作，由安全逻辑单独处理
+        if req.intent == IntentCategory.SAFETY_CONCERN or _has_safety_concern(req.message):
+            return [AgentType.COACH]
+
         targets: List[AgentType] = []
 
-        technical_kws = ["崩溃", "报错", "error", "crash", "无法登录", "登录失败", "500", "401"]
-        billing_kws = ["退款", "扣款", "发票", "账单", "支付", "订阅", "refund", "invoice"]
+        plan_kws = ["计划", "安排", "制定", "设计", "训练方案", "一周", "每周", "调整", "替换", "换成"]
+        exercise_kws = ["动作", "替代", "卧推", "深蹲", "硬拉", "练哪里", "肌群", "姿势", "要点", "怎么练"]
+        progress_kws = ["没有进步", "停滞", "退步", "分析", "瓶颈", "rpe", "恢复", "没进步", "三周", "两周"]
 
-        if req.intent == IntentCategory.TECHNICAL or any(kw in msg for kw in technical_kws):
-            targets.append(AgentType.TECHNICAL)
-        if req.intent in (IntentCategory.BILLING, IntentCategory.ACCOUNT) or any(kw in msg for kw in billing_kws):
-            targets.append(AgentType.BILLING)
+        # 计划相关
+        if req.intent in (IntentCategory.PLAN_GENERATION, IntentCategory.PLAN_ADJUSTMENT) or any(kw in msg for kw in plan_kws):
+            targets.append(AgentType.PLAN)
+        # 动作相关
+        if req.intent == IntentCategory.EXERCISE_QUERY or any(kw in msg for kw in exercise_kws):
+            targets.append(AgentType.COACH)
+        # 进度相关
+        if req.intent == IntentCategory.PROGRESS_REVIEW or any(kw in msg for kw in progress_kws):
+            targets.append(AgentType.PROGRESS)
+
+        # 一般问题默认 CoachAgent
+        if not targets:
+            targets.append(AgentType.COACH)
 
         # 保持顺序去重，并只返回当前有实例的 Agent 类型。
         deduped = list(dict.fromkeys(targets))
@@ -345,23 +433,23 @@ class AgentOrchestrator:
         return max(agents, key=lambda a: a.stats.routing_score())
 
     async def _execute(self, req: Request, agent_type: AgentType) -> AgentResponse:
-        """执行 Agent，失败时降级到 GeneralAgent。"""
+        """执行 Agent，失败时降级到 CoachAgent。"""
         agent = self._best_agent(agent_type)
         if agent is None:
-            agent = self._best_agent(AgentType.GENERAL)
+            agent = self._best_agent(AgentType.COACH)
         if agent is None:
             return AgentResponse(
-                agent_type=AgentType.GENERAL,
+                agent_type=AgentType.COACH,
                 content="服务暂时不可用，请稍后重试。",
                 success=False,
             )
 
         response = await agent.handle(req)
 
-        # 专属 Agent 失败时降级到 GeneralAgent
-        if not response.success and agent_type != AgentType.GENERAL:
-            logger.warning(f"{agent_type.value} 失败，降级到 GeneralAgent")
-            fallback = self._best_agent(AgentType.GENERAL)
+        # 专属 Agent 失败时降级到 CoachAgent
+        if not response.success and agent_type != AgentType.COACH:
+            logger.warning(f"{agent_type.value} 失败，降级到 CoachAgent")
+            fallback = self._best_agent(AgentType.COACH)
             if fallback:
                 response = await fallback.handle(req)
 

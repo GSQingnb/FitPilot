@@ -1,5 +1,5 @@
 """
-亮点：端到端意图识别
+亮点：端到端意图识别 — FitPilot 健身领域
 
 三路融合策略：
   1. LLM 语义理解（权重 70%）—— 主力，理解复杂语义和上下文
@@ -24,16 +24,15 @@ logger = logging.getLogger(__name__)
 
 
 class IntentCategory(Enum):
-    QUERY      = "query"       # 查询信息
-    COMPLAINT  = "complaint"   # 投诉不满
-    REQUEST    = "request"     # 请求操作
-    GREETING   = "greeting"    # 问候
-    ESCALATION = "escalation"  # 要求升级/转人工
-    TECHNICAL  = "technical"   # 技术问题
-    BILLING    = "billing"     # 账单/退款
-    ACCOUNT    = "account"     # 账户管理
-    FEEDBACK   = "feedback"    # 正面反馈
-    OTHER      = "other"
+    GENERAL_QUESTION  = "general_question"   # 普通健身知识/术语咨询
+    EXERCISE_QUERY    = "exercise_query"     # 具体动作、目标肌群、替代动作
+    PLAN_GENERATION   = "plan_generation"    # 请求创建训练计划
+    PLAN_ADJUSTMENT   = "plan_adjustment"    # 修改现有安排/替换动作
+    PROGRESS_REVIEW   = "progress_review"    # 分析训练表现/停滞/恢复
+    SAFETY_CONCERN    = "safety_concern"     # 疼痛、伤病、疾病、康复
+    GREETING          = "greeting"           # 问候
+    FEEDBACK          = "feedback"           # 正面/负面反馈
+    OTHER             = "other"
 
 
 class UrgencyLevel(Enum):
@@ -55,22 +54,22 @@ class IntentResult:
 
 # ── Few-shot 模板（同时用于 LLM 示例和 Embedding 匹配）────────────────────────
 _TEMPLATES: Dict[IntentCategory, List[str]] = {
-    IntentCategory.QUERY:      ["我的订单状态是什么？", "如何重置密码？", "快递什么时候到？"],
-    IntentCategory.COMPLAINT:  ["等了好几个小时！", "服务太差了！", "一直没人处理！"],
-    IntentCategory.REQUEST:    ["帮我取消订单", "我需要修改地址", "请协助退款"],
-    IntentCategory.GREETING:   ["你好", "嗨，有人吗", "早上好"],
-    IntentCategory.ESCALATION: ["我要投诉！", "转人工客服", "找你们经理"],
-    IntentCategory.TECHNICAL:  ["应用一直崩溃", "无法登录", "出现500错误"],
-    IntentCategory.BILLING:    ["为什么扣了两次款？", "申请退款", "发票问题"],
-    IntentCategory.ACCOUNT:    ["修改邮箱", "注销账户", "更新个人信息"],
-    IntentCategory.FEEDBACK:   ["服务很棒！", "非常满意", "给个好评"],
+    IntentCategory.GENERAL_QUESTION: ["什么是渐进超负荷？", "增肌期每组做多少次？", "一周练几次比较合适？"],
+    IntentCategory.EXERCISE_QUERY:   ["卧推主要练哪里？", "没有杠铃可以用什么动作替代？", "深蹲时膝盖应该怎么走？"],
+    IntentCategory.PLAN_GENERATION:  ["给我制定一套一周三练的增肌计划", "我是新手只有哑铃每周练四天", "帮我设计一个上肢下肢训练计划"],
+    IntentCategory.PLAN_ADJUSTMENT:  ["这周只能练两天怎么调整？", "深蹲太难了帮我换个动作", "最近恢复不好训练量应该怎么改？"],
+    IntentCategory.PROGRESS_REVIEW:  ["我最近卧推三周没有进步", "这周只完成了两次训练帮我分析", "最近每次深蹲RPE都是9是否太累？"],
+    IntentCategory.SAFETY_CONCERN:   ["深蹲时膝盖刺痛怎么办？", "我腰椎间盘突出还能硬拉吗？", "训练后胸口疼正常吗？"],
+    IntentCategory.GREETING:         ["你好", "嗨", "早上好"],
+    IntentCategory.FEEDBACK:         ["这个计划很棒！", "训练建议很有用", "我觉得强度太大了"],
+    IntentCategory.OTHER:            ["今天天气不错", "推荐一首歌"],
 }
 
-# 紧急关键词
+# 紧急/风险关键词（健身场景：安全风险 > 训练紧迫度）
 _URGENCY_KEYWORDS = {
-    UrgencyLevel.CRITICAL: ["紧急", "emergency", "urgent", "asap", "立刻"],
-    UrgencyLevel.HIGH:     ["今天", "马上", "尽快", "hurry", "now"],
-    UrgencyLevel.MEDIUM:   ["这周", "soon", "快点"],
+    UrgencyLevel.CRITICAL: ["刺痛", "剧烈疼痛", "胸痛", "呼吸困难", "头晕", "麻木", "骨折", "手术", "emergency"],
+    UrgencyLevel.HIGH:     ["受伤", "injured", "扭伤", "拉伤", "椎间盘", "关节损伤", "urgent", "立刻"],
+    UrgencyLevel.MEDIUM:   ["酸痛", "不适", "疼痛", "pain", "这周", "尽快"],
 }
 
 
@@ -195,7 +194,7 @@ class IntentRecognizer:
                 for m in history[-3:]
             )
 
-        prompt = f"""你是客服意图分析专家。根据示例判断用户意图，返回 JSON。
+        prompt = f"""你是健身训练意图分析专家。根据示例判断用户意图，返回 JSON。
 
 示例:
 {examples}
@@ -249,14 +248,19 @@ class IntentRecognizer:
         """策略 3：关键词模式匹配（同步，零延迟兜底）。"""
         msg = message.lower()
         patterns = {
-            IntentCategory.ESCALATION: ["投诉", "经理", "转人工", "supervisor"],
-            IntentCategory.COMPLAINT:  ["太差", "糟糕", "horrible", "等了很久"],
-            IntentCategory.QUERY:      ["?", "？", "怎么", "什么", "status"],
-            IntentCategory.REQUEST:    ["帮我", "需要", "please", "help"],
-            IntentCategory.GREETING:   ["你好", "嗨", "hello", "hi"],
-            IntentCategory.BILLING:    ["退款", "扣款", "发票", "refund"],
-            IntentCategory.TECHNICAL:  ["崩溃", "报错", "error", "crash"],
-            IntentCategory.ACCOUNT:    ["密码", "邮箱", "账户", "password"],
+            IntentCategory.SAFETY_CONCERN:    ["刺痛", "受伤", "扭伤", "拉伤", "椎间盘", "骨折", "手术", "胸痛",
+                                                "呼吸困难", "头晕", "麻木", "关节损伤", "医生", "药物", "康复"],
+            IntentCategory.PLAN_GENERATION:   ["制定", "设计", "安排", "建立", "创建", "编写", "计划", "帮我练",
+                                                "给我练", "一周", "每周", "训练方案"],
+            IntentCategory.PLAN_ADJUSTMENT:   ["调整", "修改", "替换", "换成", "替代", "太难", "太重", "换个动作",
+                                                "改一下", "怎么调"],
+            IntentCategory.PROGRESS_REVIEW:   ["没有进步", "停滞", "退步", "分析", "没进步", "没长进", "瓶颈",
+                                                "三周", "两周", "一个月", "rpe", "恢复"],
+            IntentCategory.EXERCISE_QUERY:     ["怎么", "如何", "动作", "练哪里", "肌群", "替代", "变式", "姿势",
+                                                "要点", "区别", "卧推", "深蹲", "硬拉"],
+            IntentCategory.GENERAL_QUESTION:   ["什么是", "多少", "几次", "几组", "多久", "频率", "增肌", "减脂",
+                                                "训练", "健身", "重量", "组数", "次数"],
+            IntentCategory.GREETING:            ["你好", "嗨", "hello", "hi", "hey", "早上好", "晚上好"],
         }
         best_cat, best_score = IntentCategory.OTHER, 0.0
         for cat, kws in patterns.items():
@@ -296,9 +300,9 @@ class IntentRecognizer:
     async def _extract_entities(self, message: str) -> Dict[str, List[str]]:
         """用 LLM 从消息中提取结构化实体。"""
         message = self._clean_text(message)
-        prompt = f"""从客服消息中提取实体，返回 JSON（字段值为列表，没有则为空列表）:
+        prompt = f"""从健身用户消息中提取实体，返回 JSON（字段值为列表，没有则为空列表）:
 消息: "{message}"
-格式: {{"order_id":[],"product":[],"date":[],"amount":[],"error_code":[]}}"""
+格式: {{"goal":[],"experience_level":[],"weekly_frequency":[],"session_duration":[],"equipment":[],"target_muscle":[],"exercise":[],"sets":[],"reps":[],"weight":[],"rpe":[],"pain_area":[]}}"""
         prompt = self._clean_text(prompt)
         try:
             resp = await self.client.messages.create(
@@ -309,7 +313,9 @@ class IntentRecognizer:
             s, e = raw.find("{"), raw.rfind("}") + 1
             return json.loads(raw[s:e])
         except Exception:
-            return {"order_id": [], "product": [], "date": [], "amount": [], "error_code": []}
+            return {"goal":[],"experience_level":[],"weekly_frequency":[],"session_duration":[],
+                    "equipment":[],"target_muscle":[],"exercise":[],"sets":[],"reps":[],
+                    "weight":[],"rpe":[],"pain_area":[]}
 
     # ── 辅助 ──────────────────────────────────────────────────────────────────
 
@@ -369,10 +375,8 @@ class IntentRecognizer:
         for level, kws in _URGENCY_KEYWORDS.items():
             if any(kw in msg for kw in kws):
                 return level
-        if intent == IntentCategory.ESCALATION:
+        if intent == IntentCategory.SAFETY_CONCERN:
             return UrgencyLevel.HIGH
-        if intent == IntentCategory.COMPLAINT:
-            return UrgencyLevel.MEDIUM
         return UrgencyLevel.LOW
 
     def _cache_key(self, message: str) -> str:

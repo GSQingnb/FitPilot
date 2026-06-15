@@ -1,7 +1,7 @@
 """
-EchoMind 智能客服系统 — FastAPI 入口
+FitPilot AI 健身助手 — FastAPI 入口
 
-启动时打印小熊饼干图案。
+启动时打印 ASCII banner。
 所有核心组件在 lifespan 中初始化，通过环境变量配置。
 """
 import asyncio
@@ -35,12 +35,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BANNER = r"""
-    ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ
+    💪  🏋️  💪
    ╔══════════════════════╗
-   ║   EchoMind  v2.0     ║
-   ║   智能客服 AI 系统    ║
+   ║   FitPilot  v2.0     ║
+   ║   AI 健身助手         ║
    ╚══════════════════════╝
-    ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ
+    💪  🏋️  💪
 """
 
 # ── 全局组件（lifespan 中初始化）─────────────────────────────────────────────
@@ -124,7 +124,7 @@ async def lifespan(app: FastAPI):
         query = params.get("query", "")
         return [{
             "title": "知识库降级结果",
-            "content": f"知识库暂时不可用，未能完成对“{query}”的语义检索。请稍后重试，或转人工客服确认。",
+            "content": f"知识库暂时不可用，未能完成对\"{query}\"的语义检索。请稍后重试。",
             "score": 0.0,
             "fallback": True,
             "error": error,
@@ -168,16 +168,16 @@ async def lifespan(app: FastAPI):
         baseline_path=os.getenv("EVAL_BASELINE_PATH", "/app/data/eval/baseline.json"),
     )
 
-    logger.info("EchoMind 已就绪")
+    logger.info("FitPilot 已就绪")
     yield
 
     await _monitor.stop()
-    logger.info("EchoMind 已关闭")
+    logger.info("FitPilot 已关闭")
 
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="EchoMind 智能客服",
+    title="FitPilot AI 健身助手",
     version="2.0.0",
     lifespan=lifespan,
     docs_url="/docs",
@@ -304,7 +304,7 @@ async def _build_knowledge_context(message: str, top_k: int = 3) -> tuple[str, b
 
         if not used:
             return "", False
-        parts.append("请优先依据以上知识库内容回答；如果知识库内容不足，再结合通用客服能力说明。")
+        parts.append("请优先依据以上知识库内容回答；如果知识库内容不足，再结合通用健身知识说明。")
         return "\n".join(parts), True
     except Exception as ex:
         logger.warning(f"构建知识库上下文失败: {ex}")
@@ -312,19 +312,20 @@ async def _build_knowledge_context(message: str, top_k: int = 3) -> tuple[str, b
 
 
 def _should_use_knowledge(message: str) -> bool:
-    """跳过纯寒暄，业务类问题才检索知识库，避免无关 RAG 干扰回复。"""
+    """跳过纯寒暄，健身类问题才检索知识库，避免无关 RAG 干扰回复。"""
     msg = (message or "").strip().lower()
     if not msg:
         return False
     greetings = {"你好", "您好", "嗨", "hi", "hello", "hey", "早上好", "晚上好"}
     if msg in greetings:
         return False
-    business_keywords = [
-        "退款", "订单", "物流", "配送", "发票", "扣款", "支付", "账单", "订阅",
-        "登录", "报错", "错误", "崩溃", "会员", "积分", "账户", "密码", "地址",
-        "refund", "order", "invoice", "payment", "error", "login",
+    fitness_keywords = [
+        "训练", "健身", "动作", "卧推", "深蹲", "硬拉", "增肌", "减脂",
+        "渐进超负荷", "rpe", "组数", "次数", "重量", "休息", "恢复",
+        "计划", "肌群", "替代", "器械", "哑铃", "杠铃", "饮食", "营养",
+        "exercise", "training", "workout", "muscle", "reps", "sets",
     ]
-    return len(msg) >= 4 or any(kw in msg for kw in business_keywords)
+    return len(msg) >= 4 or any(kw in msg for kw in fitness_keywords)
 
 
 @app.get("/monitor")
@@ -396,8 +397,8 @@ async def add_knowledge(body: BatchDocInput):
     ```json
     {
       "documents": [
-        {"title": "退款政策", "content": "用户在购买后 7 天内可以申请无理由退款..."},
-        {"title": "配送说明", "content": "标准配送 3-5 个工作日..."}
+        {"title": "深蹲动作要点", "content": "深蹲时保持脊柱中立，核心收紧，膝盖沿脚尖方向..."},
+        {"title": "硬拉动作要点", "content": "硬拉时保持脊柱中立，杠铃贴近身体，核心收紧..."}
       ]
     }
     ```
@@ -518,7 +519,7 @@ async def run_eval(body: Optional[EvalRunInput] = None):
 # ── 交互式 CLI ────────────────────────────────────────────────────────────────
 async def _cli():
     print(BANNER)
-    print("EchoMind CLI — 输入 quit 退出\n")
+    print("FitPilot CLI — 输入 quit 退出\n")
 
     from agents.agent_orchestrator import AgentOrchestrator, Request
     from memory.conversation_memory import MemoryManager, MsgRole
@@ -558,7 +559,7 @@ async def _cli():
         await mem.add_message(user_id, conv_id, MsgRole.USER, msg)
         await mem.add_message(user_id, conv_id, MsgRole.ASSISTANT, result.response)
 
-        print(f"\nEchoMind [{result.agent_type.value}]: {result.response}\n")
+        print(f"\nFitPilot [{result.agent_type.value}]: {result.response}\n")
 
 
 if __name__ == "__main__":
