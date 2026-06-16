@@ -1,6 +1,6 @@
 """Pydantic request/response schemas for PostgreSQL domain."""
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, Field, model_validator
@@ -290,3 +290,95 @@ class WorkoutSessionListResponse(BaseModel):
 class WorkoutExerciseStatusRequest(BaseModel):
     """Skip exercise reason."""
     reason: Optional[str] = Field(default=None, max_length=500)
+
+
+# ── Analytics ────────────────────────────────────────────────────────────────
+
+class AnalyticsOverviewResponse(BaseModel):
+    period: dict
+    completed_workouts: int
+    total_duration_seconds: int
+    average_duration_seconds: float
+    completed_sets: int
+    total_reps: int
+    total_volume: float
+    average_rpe: Optional[float] = None
+    current_streak_days: int
+    longest_streak_days: int
+    data_quality: dict
+
+
+class WeeklyAnalyticsPoint(BaseModel):
+    week_start: str
+    completed_workouts: int
+    completed_sets: int
+    total_reps: int
+    total_volume: float
+    average_rpe: Optional[float] = None
+    total_duration_seconds: int
+
+
+class ExerciseTrendPoint(BaseModel):
+    date: str
+    max_weight: Optional[float] = None
+    total_volume: float
+    total_reps: int
+    average_rpe: Optional[float] = None
+
+
+class ExerciseSummary(BaseModel):
+    session_count: int
+    completed_set_count: int
+    total_reps: int
+    total_volume: float
+    max_weight: Optional[float] = None
+    best_set_reps: Optional[int] = None
+    average_rpe: Optional[float] = None
+    last_performed_at: Optional[str] = None
+
+
+class ExerciseTrendResponse(BaseModel):
+    exercise: dict
+    summary: ExerciseSummary
+    trend: List[ExerciseTrendPoint]
+    trend_direction: str
+
+
+class MuscleDistributionItem(BaseModel):
+    primary_muscle: str
+    completed_sets: int
+    total_reps: int
+    total_volume: float
+    percentage_by_sets: float
+
+
+# ── Weekly Reports ──────────────────────────────────────────────────────────
+
+class WeeklyReportGenerateRequest(BaseModel):
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
+    force: bool = False
+
+
+class WeeklyReportResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    period_start: str
+    period_end: str
+    status: str
+    source: str
+    model_name: Optional[str] = None
+    metrics: dict
+    summary: str
+    highlights: list
+    issues: list
+    recommendations: list
+    created_at: str
+    updated_at: str
+
+
+class WeeklyReportListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: List[WeeklyReportResponse]

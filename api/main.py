@@ -213,6 +213,8 @@ from api.routes.fitness_profiles import router as fitness_profiles_router
 from api.routes.exercises import router as exercises_router
 from api.routes.training_plans import router as training_plans_router
 from api.routes.workouts import router as workouts_router
+from api.routes.analytics import router as analytics_router
+from api.routes.weekly_reports import router as weekly_reports_router
 
 app.include_router(health_db_router)
 app.include_router(users_router)
@@ -220,6 +222,8 @@ app.include_router(fitness_profiles_router)
 app.include_router(exercises_router)
 app.include_router(training_plans_router)
 app.include_router(workouts_router)
+app.include_router(analytics_router)
+app.include_router(weekly_reports_router)
 
 # ── 路由 ──────────────────────────────────────────────────────────────────────
 @app.get("/health")

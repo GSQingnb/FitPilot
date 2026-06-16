@@ -8,6 +8,7 @@ from database.models.planned_exercise import PlannedExercise
 from database.models.workout_session import WorkoutSession
 from database.models.workout_exercise import WorkoutExercise
 from database.models.workout_set import WorkoutSet
+from database.models.weekly_report import WeeklyReport
 
 __all__ = [
     "User",
@@ -19,4 +20,5 @@ __all__ = [
     "WorkoutSession",
     "WorkoutExercise",
     "WorkoutSet",
+    "WeeklyReport",
 ]
