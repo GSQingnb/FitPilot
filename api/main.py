@@ -21,7 +21,7 @@ if _ROOT not in sys.path:
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Response, UploadFile, File
+from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
@@ -181,18 +181,22 @@ app = FastAPI(
     docs_url="/docs",
 )
 
+_origins_env = os.getenv("FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+_ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
 # ── 请求/响应模型 ─────────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
     message:     str
-    user_id:     str = "anonymous"
+    user_id:     Optional[str] = None   # deprecated; derived from auth token
     conv_id:     Optional[str] = None
 
 
@@ -215,7 +219,10 @@ from api.routes.training_plans import router as training_plans_router
 from api.routes.workouts import router as workouts_router
 from api.routes.analytics import router as analytics_router
 from api.routes.weekly_reports import router as weekly_reports_router
+from api.routes.auth import router as auth_router
+from api.dependencies.auth import get_current_user
 
+app.include_router(auth_router)
 app.include_router(health_db_router)
 app.include_router(users_router)
 app.include_router(fitness_profiles_router)
@@ -234,9 +241,9 @@ async def health():
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, current_user = Depends(get_current_user)):
     """
-    主对话接口。完整流程：
+    主对话接口。需要认证。完整流程：
       记忆读取 → 意图识别 → Agent 路由 → 执行 → 记忆写入
     """
     if _orchestrator is None or _memory is None:
@@ -245,10 +252,12 @@ async def chat(req: ChatRequest):
     from agents.agent_orchestrator import Request as OrcReq
     from memory.conversation_memory import MsgRole
 
+    # Use authenticated user ID; ignore deprecated user_id in request body
+    user_id = str(current_user.id)
     conv_id = req.conv_id or str(uuid.uuid4())
 
     # 1. 读取记忆上下文
-    mem_ctx = await _memory.get_context(req.user_id, conv_id, query=req.message)
+    mem_ctx = await _memory.get_context(user_id, conv_id, query=req.message)
 
     # 2. 构建编排请求（含对话历史，用于意图识别上下文）
     history = [
@@ -264,7 +273,7 @@ async def chat(req: ChatRequest):
 
     orch_req = OrcReq(
         message=req.message,
-        user_id=req.user_id,
+        user_id=user_id,
         conv_id=conv_id,
         context=full_context,
         history=history,
@@ -274,11 +283,11 @@ async def chat(req: ChatRequest):
     result = await _orchestrator.run(orch_req)
 
     # 4. 写入记忆
-    await _memory.add_message(req.user_id, conv_id, MsgRole.USER, req.message)
-    await _memory.add_message(req.user_id, conv_id, MsgRole.ASSISTANT, result.response)
+    await _memory.add_message(user_id, conv_id, MsgRole.USER, req.message)
+    await _memory.add_message(user_id, conv_id, MsgRole.ASSISTANT, result.response)
 
     # 5. 异步更新用户画像（不阻塞响应）
-    asyncio.create_task(_memory.update_profile(req.user_id, conv_id))
+    asyncio.create_task(_memory.update_profile(user_id, conv_id))
 
     return ChatResponse(
         conv_id=conv_id,
