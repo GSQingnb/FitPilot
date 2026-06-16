@@ -161,3 +161,132 @@ class TrainingPlanListResponse(BaseModel):
     limit: int
     offset: int
     items: List[TrainingPlanSummaryResponse]
+
+
+# ── Workouts ─────────────────────────────────────────────────────────────────
+
+class WorkoutStartRequest(BaseModel):
+    training_plan_id: uuid.UUID
+    training_day_id: uuid.UUID
+
+
+class WorkoutCompleteRequest(BaseModel):
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    perceived_difficulty: Optional[float] = Field(default=None, ge=1.0, le=10.0)
+
+
+class WorkoutCancelRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class WorkoutSetCreate(BaseModel):
+    set_index: int = Field(..., ge=1)
+    set_type: str = Field(default="working")
+    weight_kg: Optional[float] = Field(default=None, ge=0)
+    reps: Optional[int] = Field(default=None, ge=0)
+    duration_seconds: Optional[int] = Field(default=None, ge=0)
+    distance_meters: Optional[float] = Field(default=None, ge=0)
+    rpe: Optional[float] = Field(default=None, ge=1.0, le=10.0)
+    is_completed: bool = True
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_has_data(self):
+        if not self.reps and not self.duration_seconds and not self.distance_meters:
+            raise ValueError("At least one of reps, duration_seconds, or distance_meters required")
+        return self
+
+
+class WorkoutSetUpdate(BaseModel):
+    set_type: Optional[str] = None
+    weight_kg: Optional[float] = Field(default=None, ge=0)
+    reps: Optional[int] = Field(default=None, ge=0)
+    duration_seconds: Optional[int] = Field(default=None, ge=0)
+    distance_meters: Optional[float] = Field(default=None, ge=0)
+    rpe: Optional[float] = Field(default=None, ge=1.0, le=10.0)
+    is_completed: Optional[bool] = None
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class WorkoutSetResponse(BaseModel):
+    id: uuid.UUID
+    set_index: int
+    set_type: str
+    weight_kg: Optional[float] = None
+    reps: Optional[int] = None
+    duration_seconds: Optional[int] = None
+    distance_meters: Optional[float] = None
+    rpe: Optional[float] = None
+    is_completed: bool
+    notes: Optional[str] = None
+
+
+class WorkoutExerciseResponse(BaseModel):
+    id: uuid.UUID
+    exercise_id: uuid.UUID
+    exercise_name: str
+    primary_muscle: str
+    equipment: str
+    status: str
+    order_index: int
+    planned_sets: Optional[int] = None
+    planned_reps_min: Optional[int] = None
+    planned_reps_max: Optional[int] = None
+    notes: Optional[str] = None
+    sets: List[WorkoutSetResponse] = Field(default_factory=list)
+
+
+class WorkoutStats(BaseModel):
+    total_exercises: int
+    completed_exercises: int
+    skipped_exercises: int
+    total_sets: int
+    completed_sets: int
+    total_reps: int
+    total_volume: float
+
+
+class WorkoutSessionDetailResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    status: str
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+    training_plan_id: Optional[uuid.UUID] = None
+    training_day_id: Optional[uuid.UUID] = None
+    training_day_title: Optional[str] = None
+    exercise_count: int
+    completed_set_count: int
+    notes: Optional[str] = None
+    perceived_difficulty: Optional[float] = None
+    exercises: List[WorkoutExerciseResponse] = Field(default_factory=list)
+    stats: Optional[WorkoutStats] = None
+
+
+class WorkoutSessionSummaryResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    status: str
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+    training_plan_id: Optional[uuid.UUID] = None
+    training_day_id: Optional[uuid.UUID] = None
+    training_day_title: Optional[str] = None
+    exercise_count: int
+    completed_set_count: int
+    notes: Optional[str] = None
+    perceived_difficulty: Optional[float] = None
+
+
+class WorkoutSessionListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: List[WorkoutSessionSummaryResponse]
+
+
+class WorkoutExerciseStatusRequest(BaseModel):
+    """Skip exercise reason."""
+    reason: Optional[str] = Field(default=None, max_length=500)
