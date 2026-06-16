@@ -211,11 +211,13 @@ from api.routes.health import router as health_db_router
 from api.routes.users import router as users_router
 from api.routes.fitness_profiles import router as fitness_profiles_router
 from api.routes.exercises import router as exercises_router
+from api.routes.training_plans import router as training_plans_router
 
 app.include_router(health_db_router)
 app.include_router(users_router)
 app.include_router(fitness_profiles_router)
 app.include_router(exercises_router)
+app.include_router(training_plans_router)
 
 # ── 路由 ──────────────────────────────────────────────────────────────────────
 @app.get("/health")

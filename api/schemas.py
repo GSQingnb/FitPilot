@@ -92,3 +92,72 @@ class ExerciseListResponse(BaseModel):
     limit: int
     offset: int
     exercises: List[ExerciseResponse]
+
+
+# ── Training Plans ───────────────────────────────────────────────────────────
+
+class TrainingPlanGenerateRequest(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=200)
+    duration_weeks: int = Field(default=4, ge=1, le=12)
+    additional_preferences: Optional[str] = Field(default=None, max_length=1000)
+
+
+class PlannedExerciseInResponse(BaseModel):
+    id: uuid.UUID
+    exercise_id: uuid.UUID
+    exercise_name: str
+    primary_muscle: str
+    equipment: str
+    order_index: int
+    sets: int
+    reps_min: int
+    reps_max: int
+    rest_seconds: int
+    target_rpe: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class TrainingDayResponse(BaseModel):
+    id: uuid.UUID
+    day_index: int
+    title: str
+    notes: Optional[str] = None
+    exercises: List[PlannedExerciseInResponse] = Field(default_factory=list)
+
+
+class TrainingPlanDetailResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    name: str
+    goal: str
+    duration_weeks: int
+    weekly_frequency: int
+    status: str
+    source: str
+    version: int
+    created_at: datetime
+    updated_at: datetime
+    days: List[TrainingDayResponse] = Field(default_factory=list)
+
+
+class TrainingPlanSummaryResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    name: str
+    goal: str
+    duration_weeks: int
+    weekly_frequency: int
+    status: str
+    source: str
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TrainingPlanListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: List[TrainingPlanSummaryResponse]
