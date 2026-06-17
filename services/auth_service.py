@@ -28,7 +28,7 @@ COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "fitpilot_refresh_token")
 COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
 COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "lax")
 COOKIE_DOMAIN = os.getenv("AUTH_COOKIE_DOMAIN", "") or None
-COOKIE_PATH = "/auth"
+COOKIE_PATH = os.getenv("AUTH_COOKIE_PATH", "/auth")
 MAX_LOGIN_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
 
 

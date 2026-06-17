@@ -11,3 +11,7 @@ logs
 .env.*
 !.env.example
 data/chroma
+frontend/node_modules
+frontend/.next
+frontend/tests
+frontend/.env.local

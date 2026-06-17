@@ -1,20 +1,43 @@
-"""Alembic env.py — async PostgreSQL support."""
+"""Alembic env.py — async PostgreSQL support.
+
+Loads DATABASE_URL from environment (Docker/CI) or project-root .env file.
+Explicit environment variables take priority over .env (override=False).
+"""
 import asyncio
 import os
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
+from dotenv import load_dotenv
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+# ── Load .env from project root ────────────────────────────────────────────
+# __file__ = alembic/env.py → .parents[1] = project root
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_DOTENV_PATH = _PROJECT_ROOT / ".env"
+if _DOTENV_PATH.exists():
+    load_dotenv(_DOTENV_PATH, override=False)
+
 # Alembic Config object
 config = context.config
 
-# Override sqlalchemy.url from environment variable if set
+# Override sqlalchemy.url from environment variable (set by Docker, CI, or .env)
 env_url = os.getenv("DATABASE_URL", "")
 if env_url:
     config.set_main_option("sqlalchemy.url", env_url)
+
+# Warn if DATABASE_URL is not available at all
+_url = config.get_main_option("sqlalchemy.url") or ""
+if not _url:
+    sys.exit(
+        "ERROR: DATABASE_URL is not set. Set the environment variable or create a .env file.\n"
+        f"  Expected .env at: {_DOTENV_PATH}\n"
+        "  Or set: $env:DATABASE_URL = 'postgresql+asyncpg://user:pass@host:5432/db'"
+    )
 
 # Set up Python logging
 if config.config_file_name is not None:

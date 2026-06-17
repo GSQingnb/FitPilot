@@ -1,5 +1,6 @@
-# FitPilot AI 健身助手 — Docker Compose 服务编排
-# 三级记忆架构：Redis（工作记忆）+ ChromaDB（情景记忆 + 用户画像）
+# FitPilot AI 健身助手 — Docker Compose 完整编排
+# 浏览器 → Nginx → Next.js前端 + FastAPI后端
+# PostgreSQL + Redis + ChromaDB + Prometheus
 
 services:
 
@@ -25,6 +26,24 @@ services:
     networks:
       - echomind-network
 
+  # ── 数据库初始化（一次性）───────────────────────────────────────────────────
+  db-init:
+    image: fitpilot-echomind:local
+    container_name: fitpilot-db-init
+    command:
+      - sh
+      - -c
+      - python -m alembic upgrade head && python -m database.seed
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-fitpilot}:${POSTGRES_PASSWORD:-fitpilot_dev_password}@postgres:5432/${POSTGRES_DB:-fitpilot}
+      PYTHONPATH: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - echomind-network
+
   # ── Redis 缓存（工作记忆）────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
@@ -43,7 +62,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── ChromaDB 向量数据库（情景记忆 + 用户画像）────────────────────────────────
+  # ── ChromaDB 向量数据库 ──────────────────────────────────────────────────────
   chromadb:
     image: chromadb/chroma:0.5.23
     container_name: echomind-chromadb
@@ -89,8 +108,9 @@ services:
       retries: 3
       start_period: 10s
 
-  # ── EchoMind 主应用 ─────────────────────────────────────────────────────────
+  # ── FastAPI 后端 ────────────────────────────────────────────────────────────
   echomind:
+    image: fitpilot-echomind:local
     build:
       context: .
       dockerfile: Dockerfile
@@ -101,19 +121,22 @@ services:
     env_file:
       - .env
     environment:
-      # 容器内固定值，覆盖 .env 中的本地路径
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fitpilot}:${POSTGRES_PASSWORD:-0000}@postgres:5432/${POSTGRES_DB:-fitpilot}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fitpilot}:${POSTGRES_PASSWORD:-fitpilot_dev_password}@postgres:5432/${POSTGRES_DB:-fitpilot}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-fitpilot_jwt_dev_key_change_in_prod}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-echomind123}@redis:6379/0
       - CHROMA_PERSIST_DIRECTORY=/app/data/chroma
       - EVAL_BASELINE_PATH=/app/data/eval/baseline.json
+      - AUTH_COOKIE_PATH=${AUTH_COOKIE_PATH:-/api/auth}
+      - AUTH_COOKIE_SECURE=${AUTH_COOKIE_SECURE:-false}
+      - AUTH_COOKIE_SAMESITE=${AUTH_COOKIE_SAMESITE:-lax}
+      - FRONTEND_ORIGINS=${FRONTEND_ORIGINS:-http://localhost}
     volumes:
       - ./data/chroma:/app/data/chroma
       - ./data/eval:/app/data/eval
       - ./logs:/app/logs
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       chromadb:
@@ -122,13 +145,41 @@ services:
     networks:
       - echomind-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 90s
+      start_period: 30s
 
-  # ── Nginx 反向代理 ──────────────────────────────────────────────────────────
+  # ── Next.js 前端 ────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: /api
+    container_name: fitpilot-frontend
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/login || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - echomind-network
+
+  # ── Nginx 统一网关 ──────────────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
     container_name: echomind-nginx
@@ -138,13 +189,15 @@ services:
       - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - nginx-logs:/var/log/nginx
     depends_on:
+      frontend:
+        condition: service_healthy
       echomind:
         condition: service_healthy
     restart: unless-stopped
     networks:
       - echomind-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/nginx-health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
