@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useState, useEffect, type FormEvent } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react"
@@ -27,8 +27,9 @@ interface FieldErrors {
 
 export function LoginForm() {
   const router = useRouter()
-  const { signIn } = useAuth()
+  const { user, signIn, checkAuth } = useAuth()
 
+  const [initialized, setInitialized] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [rememberMe, setRememberMe] = useState(true)
@@ -36,6 +37,16 @@ export function LoginForm() {
   const [errors, setErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    checkAuth().finally(() => setInitialized(true))
+  }, [checkAuth])
+
+  useEffect(() => {
+    if (initialized && user) {
+      router.replace("/dashboard")
+    }
+  }, [initialized, user, router])
 
   function validate(): boolean {
     const next: FieldErrors = {}
@@ -53,7 +64,6 @@ export function LoginForm() {
 
     setIsSubmitting(true)
     try {
-      // TODO(FastAPI): signIn calls POST /auth/login via lib/mock-api.ts.
       await signIn({ email, password })
       router.replace("/dashboard")
     } catch (err) {
@@ -64,6 +74,18 @@ export function LoginForm() {
       }
       setIsSubmitting(false)
     }
+  }
+
+  if (!initialized) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="animate-spin size-6" />
+      </div>
+    )
+  }
+
+  if (user) {
+    return null
   }
 
   return (
