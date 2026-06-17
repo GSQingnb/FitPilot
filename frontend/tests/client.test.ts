@@ -88,27 +88,28 @@ describe("API Client — Login form validation", () => {
 
 describe("Session Restore", () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     vi.stubGlobal("fetch", vi.fn())
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://test.local")
     vi.resetModules()
   })
-  afterEach(() => { vi.unstubAllGlobals() })
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
-  it("restoreSession returns null on 401", async () => {
+  it("returns null on 401 — does not hang", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }))
     const { restoreSession } = await import("../lib/api/auth")
     const result = await restoreSession()
     expect(result).toBeNull()
   })
 
-  it("restoreSession returns null on network error", async () => {
+  it("returns null on network error — does not hang", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network error")))
     const { restoreSession } = await import("../lib/api/auth")
     const result = await restoreSession()
     expect(result).toBeNull()
   })
 
-  it("restoreSession returns user on success", async () => {
+  it("returns user on success", async () => {
     const mockUser = { id: "u1", email: "test@test.com", display_name: "T", is_active: true }
     vi.stubGlobal("fetch", vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: "tk" }) })
@@ -117,6 +118,88 @@ describe("Session Restore", () => {
     const { restoreSession } = await import("../lib/api/auth")
     const result = await restoreSession()
     expect(result).toEqual(mockUser)
+  })
+
+  it("fetch timeout does not hang — caught and returns null", async () => {
+    // Use fake timers to verify AbortController timeout works
+    vi.useFakeTimers()
+    // Don't resolve fetch — it should be aborted by the 5s timeout
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(
+      (_url: string, _opts?: RequestInit) =>
+        new Promise((_, reject) => {
+          // When abort is called by setTimeout, reject with AbortError
+          const controller = _opts?.signal as AbortSignal | undefined
+          controller?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))
+        })
+    ))
+    const { restoreSession } = await import("../lib/api/auth")
+    const promise = restoreSession()
+    // Advance past the 5s timeout
+    vi.advanceTimersByTime(6000)
+    const result = await promise
+    expect(result).toBeNull()
+  })
+})
+
+describe("Auth Provider initialization", () => {
+  it("restoreSession resolves quickly — no hanging", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }))
+    const { restoreSession } = await import("../lib/api/auth")
+    const start = Date.now()
+    const result = await restoreSession()
+    const elapsed = Date.now() - start
+    expect(result).toBeNull()
+    expect(elapsed).toBeLessThan(5000) // must resolve within 5s
+  })
+})
+
+describe("API URL construction", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.stubGlobal("window", {})
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it("/api + /auth/register → /api/auth/register", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "/api")
+    const { buildApiUrl } = await import("../lib/api/client")
+    expect(buildApiUrl("/auth/register")).toBe("/api/auth/register")
+  })
+
+  it("strips trailing slash: /api/ + /auth → /api/auth", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "/api/")
+    const { buildApiUrl } = await import("../lib/api/client")
+    expect(buildApiUrl("/auth/login")).toBe("/api/auth/login")
+  })
+
+  it("http://localhost:8000 + /auth/register → full URL", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:8000")
+    const { buildApiUrl } = await import("../lib/api/client")
+    expect(buildApiUrl("/auth/register")).toBe("http://localhost:8000/auth/register")
+  })
+
+  it("rejects file:// URL — falls back to /api", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "file:///api")
+    const { getApiBaseUrl } = await import("../lib/api/client")
+    expect(getApiBaseUrl()).toBe("/api")
+  })
+
+  it("rejects Windows drive letter — falls back to /api", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "C:/Program Files/Git/api")
+    const { getApiBaseUrl } = await import("../lib/api/client")
+    expect(getApiBaseUrl()).toBe("/api")
+  })
+
+  it("rejects backslash path — falls back to /api", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "C:\\Program Files\\Git\\api")
+    const { getApiBaseUrl } = await import("../lib/api/client")
+    expect(getApiBaseUrl()).toBe("/api")
+  })
+
+  it("empty value — falls back to /api", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "")
+    const { getApiBaseUrl } = await import("../lib/api/client")
+    expect(getApiBaseUrl()).toBe("/api")
   })
 })
 

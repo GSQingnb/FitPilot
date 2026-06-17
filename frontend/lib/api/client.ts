@@ -26,9 +26,49 @@ export function getAccessToken() {
   return state.accessToken
 }
 
-function getBaseUrl() {
-  // NEXT_PUBLIC_API_BASE_URL is baked in at Docker build time
-  return process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
+/**
+ * Returns the normalized API base URL.
+ *
+ * Docker: "/api"  → same-origin (browser → nginx → backend)
+ * Dev:    "http://localhost:8000" → direct backend access
+ *
+ * Rejects values contaminated by MSYS/Git Bash path conversion
+ * (e.g. "C:/Program Files/Git/api") which would produce file:// URLs.
+ */
+export function getApiBaseUrl(): string {
+  const raw = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "/api"
+
+  // Block common contamination patterns from MSYS2/Git Bash path conversion
+  if (typeof window !== "undefined") {
+    const invalid =
+      /^file:|^[A-Za-z]:[\\/]|\\\\|Program Files|Program Files \(x86\)/.test(raw)
+    if (invalid) {
+      console.error(
+        "FitPilot: NEXT_PUBLIC_API_BASE_URL is contaminated (MSYS path conversion?):",
+        raw,
+        "— falling back to /api"
+      )
+      return "/api"
+    }
+  }
+
+  return raw.replace(/\/+$/, "") // strip trailing slashes
+}
+
+/**
+ * Build a full API URL from a path like "/auth/register".
+ * Handles both relative ("/api") and absolute ("http://...") base URLs.
+ */
+export function buildApiUrl(path: string): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`
+  const base = getApiBaseUrl()
+
+  if (base.startsWith("http")) {
+    return `${base}${normalized}`
+  }
+
+  // Relative base like "/api"
+  return `${base}${normalized}`
 }
 
 export class ApiError extends Error {
@@ -44,12 +84,11 @@ export class ApiError extends Error {
 }
 
 async function refreshAccessToken(): Promise<string | null> {
-  // Deduplicate concurrent refresh calls
   if (state.refreshPromise) return state.refreshPromise
 
   state.refreshPromise = (async () => {
     try {
-      const res = await fetch(`${getBaseUrl()}/auth/refresh`, {
+      const res = await fetch(buildApiUrl("/auth/refresh"), {
         method: "POST",
         credentials: "include",
       })
@@ -77,7 +116,7 @@ export async function apiFetch<T = unknown>(
   options: FetchOptions = {}
 ): Promise<T> {
   const { skipAuth, skipRefresh, ...fetchOpts } = options
-  const url = `${getBaseUrl()}${path}`
+  const url = buildApiUrl(path)
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -107,7 +146,6 @@ export async function apiFetch<T = unknown>(
       const err = await retry.json().catch(() => ({}))
       throw new ApiError(err.detail || "Request failed", retry.status)
     }
-    // Refresh failed — propagate the original 401
     throw new ApiError("Authentication required", 401)
   }
 

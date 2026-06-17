@@ -1,4 +1,4 @@
-import { apiFetch, setAccessToken } from "./client"
+import { apiFetch, buildApiUrl, setAccessToken } from "./client"
 
 export interface AuthUser {
   id: string
@@ -50,14 +50,19 @@ export async function logout(): Promise<void> {
 
 /** Attempt to restore session via refresh token cookie.
  *  Returns null for ANY failure — MUST NOT throw.
- *  Callers treat null as "not logged in" and proceed to show login. */
+ *  Uses AbortController timeout to prevent hanging initialization. */
 export async function restoreSession(): Promise<AuthUser | null> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
-    const res = await fetch(`${baseUrl}/auth/refresh`, {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+    const res = await fetch(buildApiUrl("/auth/refresh"), {
       method: "POST",
       credentials: "include",
+      signal: controller.signal,
     })
+    clearTimeout(timeoutId)
+
     if (!res.ok) {
       setAccessToken(null)
       return null
@@ -71,6 +76,7 @@ export async function restoreSession(): Promise<AuthUser | null> {
     setAccessToken(token)
     return await getMe()
   } catch {
+    // Network error, timeout, 401 — all mean "not logged in"
     setAccessToken(null)
     return null
   }
