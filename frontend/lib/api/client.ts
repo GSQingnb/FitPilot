@@ -27,6 +27,7 @@ export function getAccessToken() {
 }
 
 function getBaseUrl() {
+  // NEXT_PUBLIC_API_BASE_URL is baked in at Docker build time
   return process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 }
 

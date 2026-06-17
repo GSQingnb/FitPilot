@@ -86,6 +86,40 @@ describe("API Client — Login form validation", () => {
   })
 })
 
+describe("Session Restore", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn())
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://test.local")
+    vi.resetModules()
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it("restoreSession returns null on 401", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }))
+    const { restoreSession } = await import("../lib/api/auth")
+    const result = await restoreSession()
+    expect(result).toBeNull()
+  })
+
+  it("restoreSession returns null on network error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network error")))
+    const { restoreSession } = await import("../lib/api/auth")
+    const result = await restoreSession()
+    expect(result).toBeNull()
+  })
+
+  it("restoreSession returns user on success", async () => {
+    const mockUser = { id: "u1", email: "test@test.com", display_name: "T", is_active: true }
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: "tk" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => mockUser })
+    )
+    const { restoreSession } = await import("../lib/api/auth")
+    const result = await restoreSession()
+    expect(result).toEqual(mockUser)
+  })
+})
+
 describe("Profile enum mapping", () => {
   it("should have correct goal values", () => {
     const goals = ["muscle_gain", "fat_loss", "strength", "general_fitness"]

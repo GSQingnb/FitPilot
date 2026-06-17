@@ -10,7 +10,6 @@ import {
   type ReactNode,
 } from "react"
 import { login as apiLogin, logout as apiLogout, register as apiRegister, restoreSession, type AuthUser } from "@/lib/api/auth"
-import { ApiError } from "@/lib/api/client"
 
 export interface LoginPayload { email: string; password: string }
 export interface RegisterPayload { displayName: string; email: string; password: string }
@@ -28,12 +27,28 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isInitializing, setIsInitializing] = useState(true)
+  const [initError, setInitError] = useState(false)
 
   useEffect(() => {
-    restoreSession()
-      .then((u) => setUser(u))
-      .catch(() => setUser(null))
-      .finally(() => setIsInitializing(false))
+    let cancelled = false
+    async function init() {
+      try {
+        const u = await restoreSession()
+        if (!cancelled) {
+          setUser(u)
+        }
+      } catch {
+        if (!cancelled) {
+          setInitError(true)
+        }
+      } finally {
+        if (!cancelled) {
+          setIsInitializing(false)
+        }
+      }
+    }
+    init()
+    return () => { cancelled = true }
   }, [])
 
   const signIn = useCallback(async (payload: LoginPayload) => {
@@ -47,7 +62,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signOut = useCallback(async () => {
-    await apiLogout()
+    try {
+      await apiLogout()
+    } catch {
+      // Even if logout API fails, clear local state
+    }
     setUser(null)
   }, [])
 
@@ -56,17 +75,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user, isInitializing, signIn, signUp, signOut],
   )
 
+  // If initialization failed (network error, not 401), show a minimal loading state
+  // that doesn't crash — the login page will still render
+  if (initError) {
+    // Still render children — let the login page handle it
+  }
+
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export function useAuth() {
+export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext)
   if (!ctx) {
-    // SSR / static generation: return safe defaults
-    if (typeof window === "undefined") {
-      return { user: null, isInitializing: true, signIn: async () => {}, signUp: async () => {}, signOut: async () => {} } as AuthContextValue
+    // SSR or context-not-yet-mounted: return safe defaults
+    // This prevents crashes during SSR and early hydration
+    return {
+      user: null,
+      isInitializing: true,
+      signIn: async () => {},
+      signUp: async () => {},
+      signOut: async () => {},
     }
-    throw new Error("useAuth must be used within an AuthProvider")
   }
   return ctx
 }

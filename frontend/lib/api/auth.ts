@@ -37,8 +37,7 @@ export async function register(email: string, display_name: string, password: st
 }
 
 export async function getMe(): Promise<AuthUser> {
-  const data = await apiFetch<AuthUser>("/auth/me")
-  return data
+  return apiFetch<AuthUser>("/auth/me")
 }
 
 export async function logout(): Promise<void> {
@@ -49,23 +48,30 @@ export async function logout(): Promise<void> {
   }
 }
 
-/** Attempt to restore session via refresh token cookie */
+/** Attempt to restore session via refresh token cookie.
+ *  Returns null for ANY failure — MUST NOT throw.
+ *  Callers treat null as "not logged in" and proceed to show login. */
 export async function restoreSession(): Promise<AuthUser | null> {
   try {
-    const res = await fetch(`${getBaseUrl()}/auth/refresh`, {
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
+    const res = await fetch(`${baseUrl}/auth/refresh`, {
       method: "POST",
       credentials: "include",
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      setAccessToken(null)
+      return null
+    }
     const data = await res.json()
-    setAccessToken(data.access_token)
-    const me = await getMe()
-    return me
+    const token = data?.access_token
+    if (!token) {
+      setAccessToken(null)
+      return null
+    }
+    setAccessToken(token)
+    return await getMe()
   } catch {
+    setAccessToken(null)
     return null
   }
-}
-
-function getBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 }
