@@ -9,7 +9,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-TEST_DB_URL = "postgresql+asyncpg://fitpilot:fitpilot_dev_password@localhost:5432/fitpilot"
+TEST_DB_URL = "postgresql+asyncpg://fitpilot:0000@localhost:5432/fitpilot"
 
 
 @pytest_asyncio.fixture
@@ -237,6 +237,127 @@ class TestMuscleDistribution:
         assert len(dist) >= 1
         total_pct = sum(d["percentage_by_sets"] for d in dist)
         assert 99.0 <= total_pct <= 101.0  # float tolerance
+
+
+# ── Date boundary tests (regression: date_to was excluding same-day data) ────
+
+class TestDateBoundary:
+    @pytest.mark.asyncio
+    async def test_session_on_date_to_is_included(self, db_session):
+        """Session on date_to at 12:00 UTC must be counted in the period."""
+        from services.analytics_service import AnalyticsService
+        from database.models.workout_session import WorkoutSession, WorkoutStatus
+        from datetime import datetime, timezone
+
+        uid = await _create_user(db_session)
+        dt = datetime(2026, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
+        ws = WorkoutSession(user_id=uid, status=WorkoutStatus.COMPLETED,
+                            started_at=dt, completed_at=dt, duration_seconds=600)
+        db_session.add(ws)
+        await db_session.commit()
+
+        svc = AnalyticsService(db_session)
+        result = await svc.get_overview(uid,
+            date_from=date(2026, 6, 18), date_to=date(2026, 6, 18))
+        assert result["completed_workouts"] == 1
+        assert result["total_duration_seconds"] == 600
+
+    @pytest.mark.asyncio
+    async def test_session_after_date_to_is_excluded(self, db_session):
+        """Session at 00:00 on date_to+1 must NOT be counted in the period."""
+        from services.analytics_service import AnalyticsService
+        from database.models.workout_session import WorkoutSession, WorkoutStatus
+        from datetime import datetime, timezone
+
+        uid = await _create_user(db_session)
+        dt = datetime(2026, 6, 19, 0, 0, 0, tzinfo=timezone.utc)
+        ws = WorkoutSession(user_id=uid, status=WorkoutStatus.COMPLETED,
+                            started_at=dt, completed_at=dt, duration_seconds=600)
+        db_session.add(ws)
+        await db_session.commit()
+
+        svc = AnalyticsService(db_session)
+        result = await svc.get_overview(uid,
+            date_from=date(2026, 6, 18), date_to=date(2026, 6, 18))
+        assert result["completed_workouts"] == 0
+
+    @pytest.mark.asyncio
+    async def test_session_on_date_to_midnight_utc(self, db_session):
+        """Session at 23:59:59 UTC on date_to must be included."""
+        from services.analytics_service import AnalyticsService
+        from database.models.workout_session import WorkoutSession, WorkoutStatus
+        from datetime import datetime, timezone
+
+        uid = await _create_user(db_session)
+        dt = datetime(2026, 6, 18, 23, 59, 59, tzinfo=timezone.utc)
+        ws = WorkoutSession(user_id=uid, status=WorkoutStatus.COMPLETED,
+                            started_at=dt, completed_at=dt, duration_seconds=300)
+        db_session.add(ws)
+        await db_session.commit()
+
+        svc = AnalyticsService(db_session)
+        result = await svc.get_overview(uid,
+            date_from=date(2026, 6, 18), date_to=date(2026, 6, 18))
+        assert result["completed_workouts"] == 1
+
+    @pytest.mark.asyncio
+    async def test_session_no_sets_still_counts(self, db_session):
+        """Completed session with zero sets still counts as a workout."""
+        from services.analytics_service import AnalyticsService
+        from database.models.workout_session import WorkoutSession, WorkoutStatus
+        from datetime import datetime, timezone
+
+        uid = await _create_user(db_session)
+        dt = datetime(2026, 6, 18, 14, 0, 0, tzinfo=timezone.utc)
+        ws = WorkoutSession(user_id=uid, status=WorkoutStatus.COMPLETED,
+                            started_at=dt, completed_at=dt, duration_seconds=534)
+        db_session.add(ws)
+        await db_session.commit()
+
+        svc = AnalyticsService(db_session)
+        result = await svc.get_overview(uid,
+            date_from=date(2026, 6, 18), date_to=date(2026, 6, 18))
+        assert result["completed_workouts"] == 1
+        assert result["total_duration_seconds"] == 534
+        assert result["completed_sets"] == 0
+        assert result["total_reps"] == 0
+        assert result["total_volume"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_session_with_sets_computes_correctly(self, db_session):
+        """Session with 5kg×10 reps: sets=1, reps=10, volume=50"""
+        from services.analytics_service import AnalyticsService
+        from database.models.workout_session import WorkoutSession, WorkoutStatus
+        from database.models.workout_exercise import WorkoutExercise, ExerciseStatus
+        from database.models.workout_set import WorkoutSet
+        from database.repositories.exercise_repository import ExerciseRepository
+        from datetime import datetime, timezone
+
+        uid = await _create_user(db_session)
+        er = ExerciseRepository(db_session)
+        exs, _ = await er.list_filtered(limit=1)
+
+        dt = datetime(2026, 6, 17, 14, 0, 0, tzinfo=timezone.utc)
+        ws = WorkoutSession(user_id=uid, status=WorkoutStatus.COMPLETED,
+                            started_at=dt, completed_at=dt, duration_seconds=3600)
+        db_session.add(ws)
+        await db_session.flush()
+        we = WorkoutExercise(workout_session_id=ws.id, exercise_id=exs[0].id,
+                              order_index=1, status=ExerciseStatus.COMPLETED)
+        db_session.add(we)
+        await db_session.flush()
+        db_session.add(WorkoutSet(workout_exercise_id=we.id, set_index=1,
+                                   set_type="working", weight_kg=5, reps=10,
+                                   rpe=7, is_completed=True))
+        await db_session.commit()
+
+        svc = AnalyticsService(db_session)
+        result = await svc.get_overview(uid,
+            date_from=date(2026, 6, 17), date_to=date(2026, 6, 17))
+        assert result["completed_workouts"] == 1
+        assert result["completed_sets"] == 1
+        assert result["total_reps"] == 10
+        assert result["total_volume"] == 50.0
 
 
 # ── Data isolation tests ────────────────────────────────────────────────────

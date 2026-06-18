@@ -3,7 +3,7 @@
 All queries filter to completed sessions and completed sets only.
 """
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import and_, func, select, text
@@ -32,7 +32,10 @@ class AnalyticsRepository:
         if date_from:
             conditions.append(WorkoutSession.started_at >= date_from)
         if date_to:
-            conditions.append(WorkoutSession.started_at <= date_to)
+            # date_to is a Python date — comparison with timestamptz column
+            # treats it as midnight UTC. Add one day so sessions on date_to
+            # itself are included.
+            conditions.append(WorkoutSession.started_at < date_to + timedelta(days=1))
         return and_(*conditions)
 
     # ── Overview ────────────────────────────────────────────────────────────
