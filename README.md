@@ -9,8 +9,6 @@
 </p>
 
 <p align="center">
-  <a href="YOUR_DEMO_URL"><strong>🚀 在线 Demo</strong></a>
-  ·
   <a href="YOUR_30S_VIDEO_URL"><strong>🎥 30 秒演示</strong></a>
   ·
   <a href="#-技术架构与-ai-策略"><strong>🧠 技术架构</strong></a>
@@ -253,7 +251,7 @@ Pydantic 结构校验
 
 暂未部署上线，敬请期待！
 
-## 🚀 Demo 与演示视频
+## 🚀 演示视频
 
 ### 30 秒演示内容
 【FitPilot_demo】 https://www.bilibili.com/video/BV1DMjw6YEQu/?share_source=copy_web&vd_source=e8d92d8531f65156cd36ffaa0a32448b
