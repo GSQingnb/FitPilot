@@ -81,7 +81,8 @@ export function RegisterForm() {
           setFormError(err.message)
         }
       } else {
-        setFormError("Unable to create your account. Please try again.")
+        console.error("Register failed:", err)
+        setFormError(`Unable to create your account. ${err instanceof Error ? err.message : ""}`)
       }
       setIsSubmitting(false)
     }

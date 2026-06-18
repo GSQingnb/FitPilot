@@ -4,7 +4,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -14,41 +13,31 @@ import { login as apiLogin, logout as apiLogout, register as apiRegister, restor
 export interface LoginPayload { email: string; password: string }
 export interface RegisterPayload { displayName: string; email: string; password: string }
 
-interface AuthContextValue {
+export interface AuthContextValue {
   user: AuthUser | null
   isInitializing: boolean
   signIn: (payload: LoginPayload) => Promise<void>
   signUp: (payload: RegisterPayload) => Promise<void>
   signOut: () => Promise<void>
+  checkAuth: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [isInitializing, setIsInitializing] = useState(true)
-  const [initError, setInitError] = useState(false)
+  const [isInitializing, setIsInitializing] = useState(false)
 
-  useEffect(() => {
-    let cancelled = false
-    async function init() {
-      try {
-        const u = await restoreSession()
-        if (!cancelled) {
-          setUser(u)
-        }
-      } catch {
-        if (!cancelled) {
-          setInitError(true)
-        }
-      } finally {
-        if (!cancelled) {
-          setIsInitializing(false)
-        }
-      }
+  const checkAuth = useCallback(async () => {
+    setIsInitializing(true)
+    try {
+      const u = await restoreSession()
+      setUser(u)
+    } catch {
+      setUser(null)
+    } finally {
+      setIsInitializing(false)
     }
-    init()
-    return () => { cancelled = true }
   }, [])
 
   const signIn = useCallback(async (payload: LoginPayload) => {
@@ -62,40 +51,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signOut = useCallback(async () => {
-    try {
-      await apiLogout()
-    } catch {
-      // Even if logout API fails, clear local state
-    }
+    try { await apiLogout() } catch { /* ignore */ }
     setUser(null)
   }, [])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, isInitializing, signIn, signUp, signOut }),
-    [user, isInitializing, signIn, signUp, signOut],
+    () => ({ user, isInitializing, signIn, signUp, signOut, checkAuth }),
+    [user, isInitializing, signIn, signUp, signOut, checkAuth],
   )
-
-  // If initialization failed (network error, not 401), show a minimal loading state
-  // that doesn't crash — the login page will still render
-  if (initError) {
-    // Still render children — let the login page handle it
-  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext)
-  if (!ctx) {
-    // SSR or context-not-yet-mounted: return safe defaults
-    // This prevents crashes during SSR and early hydration
-    return {
-      user: null,
-      isInitializing: true,
-      signIn: async () => {},
-      signUp: async () => {},
-      signOut: async () => {},
-    }
+  const context = useContext(AuthContext)
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider")
   }
-  return ctx
+  return context
+}
+
+export function useOptionalAuth(): AuthContextValue | null {
+  return useContext(AuthContext) ?? null
 }

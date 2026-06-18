@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation"
 import { LogOut, UserCircle } from "lucide-react"
 import type { AuthUser } from "@/lib/api/auth"
-import { useAuth } from "@/components/auth/auth-provider"
+import { useOptionalAuth } from "@/components/auth/auth-provider"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -34,7 +34,8 @@ export function UserMenu({
   compact?: boolean
 }) {
   const router = useRouter()
-  const { signOut } = useAuth()
+  const auth = useOptionalAuth()
+  const signOut = auth?.signOut ?? (async () => {})
 
   async function handleSignOut() {
     await signOut()
