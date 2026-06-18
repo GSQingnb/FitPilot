@@ -1,241 +1,283 @@
-# FitPilot — AI-Powered Fitness Planning & Workout Tracking
+# FitPilot 🏋️‍
 
-FitPilot is a full-stack AI fitness platform that generates personalized training plans, tracks every set and rep, provides analytics and weekly reports, and offers an AI coach for real-time guidance — all deployable with a single Docker command.
+### 从“我想健身”到“今天练什么”的 AI 训练执行系统
 
-**Status**: MVP — fully functional local deployment with AI-assisted features.
+> 面向健身新手的 AI 训练规划与追踪平台：将用户目标、训练经验、可用器械与时间约束，转化为**可校验、可执行、可追踪**的结构化训练计划。
 
-## Screenshots
+<p align="center">
+  <img src="docs/assets/fitpilot-hero.gif" alt="FitPilot Product Demo" width="92%" />
+</p>
 
-<!-- TODO: add real screenshots -->
+<p align="center">
+  <a href="YOUR_DEMO_URL"><strong>🚀 在线 Demo</strong></a>
+  ·
+  <a href="YOUR_30S_VIDEO_URL"><strong>🎥 30 秒演示</strong></a>
+  ·
+  <a href="#-技术架构与-ai-策略"><strong>🧠 技术架构</strong></a>
+</p>
 
-| Dashboard | Training Plan | Current Workout |
-|-----------|---------------|-----------------|
-| ![dashboard](docs/images/dashboard.png) | ![plan](docs/images/training-plan.png) | ![workout](docs/images/current-workout.png) |
+<p align="center">
+  <img src="https://img.shields.io/badge/Frontend-Next.js%20%2B%20TypeScript-black" />
+  <img src="https://img.shields.io/badge/Backend-FastAPI-009688" />
+  <img src="https://img.shields.io/badge/LLM-DeepSeek-blue" />
+  <img src="https://img.shields.io/badge/Database-PostgreSQL-336791" />
+  <img src="https://img.shields.io/badge/Vector_DB-ChromaDB-orange" />
+  <img src="https://img.shields.io/badge/Deploy-Docker%20Compose-2496ED" />
+</p>
 
-| Analytics | Weekly Report | AI Coach |
-|-----------|---------------|----------|
-| ![analytics](docs/images/analytics.png) | ![report](docs/images/weekly-report.png) | ![coach](docs/images/ai-coach.png) |
+|       3 个专业 Agent       |        9 类健身意图        |   17 条计划校验规则  | 174+ 自动化测试 |
+| :---------------------: | :-------------------: | :-----------: | :--------: |
+| Coach / Plan / Progress | 规则 + Pattern + LLM 融合 | 结构、器械、动作与安全约束 | 后端、前端与集成测试 |
 
-> Note: Screenshots are placeholder paths. To generate them, run the app and capture each page.
+---
 
-## Core Features
+## 目录
 
-- **Authentication** — Register and login with JWT access tokens and HttpOnly refresh cookies
-- **Fitness Profile** — Set goals, experience level, equipment, and training frequency
-- **AI Training Plans** — Generate structured plans tailored to your profile (LLM-powered)
-- **Plan Lifecycle** — Activate, view details, and archive plans
-- **Workout Execution** — Start workouts from active plans, record sets with weight/reps/RPE
-- **Workout History** — Browse completed sessions with full exercise and set details
-- **Training Analytics** — Overview stats, weekly trends, exercise progression, muscle distribution
-- **Weekly Reports** — AI-generated summaries with highlights, issues, and recommendations
-- **AI Coach** — Chat with a domain-aware fitness assistant
-- **Data Isolation** — All user data is ownership-checked at the API layer
-- **One-Cmd Deploy** — `docker compose up -d --build` brings up the entire stack
+* [一句话项目简介](#-一句话项目简介)
+* [解决了谁的问题](#-解决了谁的问题)
+* [核心功能](#-核心功能)
+* [技术架构与 AI 策略](#-技术架构与-ai-策略)
+* [用户反馈](#-用户反馈)
+* [Demo 与演示视频](#-demo-与演示视频)
 
-## Architecture
+---
 
-```mermaid
-graph LR
-    Browser --> Nginx
-    Nginx -->|/| NextJS[Next.js Frontend]
-    Nginx -->|/api/| FastAPI[FastAPI Backend]
-    FastAPI --> PostgreSQL
-    FastAPI --> Redis
-    FastAPI --> ChromaDB
-    FastAPI --> LLM[Anthropic Claude]
-    Prometheus --> FastAPI
+## 🎯 一句话项目简介
+
+FitPilot 不是只会输出训练建议的聊天机器人，而是一套完整的 AI 健身业务系统：
+
+```text
+健身档案
+→ AI 生成结构化训练计划
+→ 规则校验与持久化
+→ 训练组记录与状态流转
+→ 训练趋势分析
+→ AI 周报与安全问答
 ```
 
-**Data stores**: PostgreSQL (business data), Redis (refresh tokens / locks / sessions), ChromaDB (knowledge base RAG), Prometheus (monitoring).
+系统覆盖从“制定计划”到“完成训练并复盘”的完整闭环。
 
-**Agent workflow**: User message → Intent Recognition (LLM + Embedding + Pattern) → Agent Router → CoachAgent / PlanAgent / ProgressAgent → Safety Layer → Response.
+---
 
-## Agent System
+## 👤 解决了谁的问题
 
-FitPilot uses a multi-agent architecture with nine intent categories and three specialized agents:
+### 健身新手
 
-| Agent | Responsibilities |
-|-------|-----------------|
-| **CoachAgent** | General fitness knowledge, exercise guidance, safety boundaries |
-| **PlanAgent** | Training plan generation and adjustment |
-| **ProgressAgent** | Performance analysis, plateau detection, recovery advice |
+很多用户知道自己想增肌或减脂，但不知道：
 
-**Intent categories**: `general_question`, `exercise_query`, `plan_generation`, `plan_adjustment`, `progress_review`, `safety_concern`, `greeting`, `feedback`, `other`.
+* 一周练几次、每次练什么；
+* 每个动作做多少组、多少次、使用多大强度；
+* 家里只有哑铃或徒手条件时如何替换动作；
+* 训练完成后如何判断自己是否真的进步。
 
-The routing engine uses a three-layer strategy: intent mapping → performance-based selection → fallback. Safety concerns get priority routing with automatic disclaimer injection.
+### 使用普通 AI 助手的用户
 
-## Technology Stack
+通用大模型可以生成建议，但经常存在：
 
-| Layer | Technologies |
-|-------|-------------|
-| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS, shadcn/ui, TanStack Query, Recharts |
-| **Backend** | Python 3.12, FastAPI, SQLAlchemy 2.x (async), Pydantic v2, Alembic |
-| **AI/ML** | Anthropic Claude (configurable), ChromaDB embeddings |
-| **Data** | PostgreSQL 16, Redis 7, ChromaDB 0.5 |
-| **Infra** | Docker Compose, Nginx, Prometheus |
-| **Testing** | pytest, Vitest, Python smoke test |
+* 动作名称或器械不符合用户条件；
+* 输出是一段文本，无法直接执行和记录；
+* 计划结构不稳定，缺乏业务规则校验；
+* 对疼痛、伤病等问题缺乏明确的安全边界。
 
-## Quick Start
+### FitPilot 的解决方式
 
-### Prerequisites
+FitPilot 将 AI 输出限制在真实动作库中，并通过 JSON Schema、Pydantic 和业务规则校验，把自然语言建议转换成可执行的训练数据。
 
-- Docker and Docker Compose
-- An Anthropic API key (for AI features)
+---
 
-### Setup
+## ✨ 核心功能
+
+### 1. AI 结构化训练计划生成
+
+用户填写目标、经验、训练频率和器械后，系统自动生成包含训练日、动作、组数、次数、RPE 和休息时间的完整计划。
+
+<p align="center">
+  <img src="docs/assets/plan-generation.gif" alt="AI Training Plan Generation" width="88%" />
+</p>
+
+```text
+Fitness Profile
+→ 候选动作筛选
+→ DeepSeek 生成 JSON
+→ Pydantic 结构校验
+→ 17 条业务规则校验
+→ PostgreSQL 事务保存
+```
+
+**工程亮点**
+
+* 模型只能从候选动作白名单中选择动作；
+* 自动检查器械、训练频率、动作数量、RPE 和次数范围；
+* 模型输出不合格时，将校验错误反馈给模型重试；
+* 计划、训练日和动作在同一数据库事务中保存。
+
+---
+
+### 2. 训练执行与数据追踪
+
+用户可以激活计划、开始训练、记录每一组的重量、次数和 RPE，并完成或跳过动作。
+
+<p align="center">
+  <img src="docs/assets/workout-tracking.gif" alt="Workout Tracking" width="88%" />
+</p>
+
+系统通过状态机保证训练流程一致：
+
+```text
+Workout Session
+in_progress → completed / cancelled
+
+Workout Exercise
+pending → in_progress → completed / skipped
+```
+
+训练结束后自动计算：
+
+* 完成训练次数；
+* 完成组数与总次数；
+* 训练容量；
+* 训练时长；
+* 连续训练天数。
+
+---
+
+### 3. 训练分析、AI 周报与安全教练
+
+<p align="center">
+  <img src="docs/assets/analytics-coach.gif" alt="Analytics and AI Coach" width="88%" />
+</p>
+
+FitPilot 将训练记录聚合为可解释的进度指标，并生成周期总结：
+
+* 28 天训练概览；
+* 每周训练趋势；
+* 单动作表现变化；
+* 肌群训练分布；
+* AI 周报与规则降级报告；
+* 基于知识库的健身问答；
+* 疼痛和伤病场景的安全提示。
+
+当模型服务不可用时，Weekly Report 会自动降级为规则报告，避免核心业务完全依赖 LLM。
+
+---
+
+## 🧠 技术架构与 AI 策略
+
+### 系统架构
+
+```mermaid
+flowchart LR
+    U[Browser] --> N[Nginx]
+    N --> F[Next.js Frontend]
+    N --> A[FastAPI Backend]
+
+    A --> P[(PostgreSQL)]
+    A --> R[(Redis)]
+    A --> C[(ChromaDB)]
+    A --> L[DeepSeek API]
+
+    A --> O[Agent Orchestrator]
+    O --> CA[Coach Agent]
+    O --> PA[Plan Agent]
+    O --> PRA[Progress Agent]
+```
+
+### 技术栈
+
+| 模块    | 技术                                                       |
+| ----- | -------------------------------------------------------- |
+| 前端    | Next.js、TypeScript、Tailwind CSS、shadcn/ui、TanStack Query |
+| 后端    | FastAPI、Pydantic、SQLAlchemy Async、Alembic                |
+| 模型    | DeepSeek V4 Flash，兼容 Anthropic Messages API              |
+| Agent | Coach Agent、Plan Agent、Progress Agent                    |
+| 数据库   | PostgreSQL、Redis、ChromaDB                                |
+| 可观测性  | Prometheus、结构化日志、Agent 执行统计                              |
+| 部署    | Docker Compose、Nginx、数据库自动迁移与 Seed                       |
+| 测试    | Pytest、Vitest、API Smoke Test、LLM-as-Judge                |
+
+### Prompt 与可靠性策略
+
+#### 1. Profile-aware Prompt
+
+Prompt 中注入用户的：
+
+* 训练目标；
+* 经验等级；
+* 每周训练频率；
+* 可用器械；
+* 身体限制；
+* 候选动作列表。
+
+#### 2. Structured Output
+
+模型必须按照指定 JSON Schema 返回计划，不接收自由格式 Markdown 作为最终结果。
+
+#### 3. 双层校验
+
+```text
+Pydantic 结构校验
++
+业务规则校验
+```
+
+校验内容包括动作是否存在、器械是否可用、训练日数量、动作数量、组数、次数、RPE 和休息时间。
+
+#### 4. 安全优先路由
+
+当输入命中疼痛、刺痛、骨折、手术等安全关键词时：
+
+* 强制路由至 Coach Agent；
+* 禁止进入多 Agent 协作；
+* 自动附加安全提示；
+* 标记需要专业人员介入。
+
+#### 5. RAG 与降级机制
+
+健身知识通过 ChromaDB 检索注入回答。查询改写或知识库检索失败时，系统降级使用原始问题，不中断聊天主链路。
+
+#### 6. 统一 LLM Client
+
+统一处理：
+
+* Thinking Block 与 Text Block；
+* 空响应；
+* Token 截断；
+* JSON 解析；
+* 429、5xx 和超时重试；
+* 401、402、403 非重试错误；
+* 上游错误脱敏。
+
+---
+
+## 💬 用户反馈
+
+暂未部署上线，敬请期待！
+
+## 🚀 Demo 与演示视频
+
+### 30 秒演示内容
+【FitPilot_demo】 https://www.bilibili.com/video/BV1DMjw6YEQu/?share_source=copy_web&vd_source=e8d92d8531f65156cd36ffaa0a32448b
+
+### 本地运行
 
 ```bash
-# Clone the repository
-git clone <repo-url>
+git clone https://github.com/GSQingnb/FitPilot.git
 cd FitPilot
 
-# Create your environment file
 cp .env.example .env
-# Edit .env and set:
-#   ANTHROPIC_API_KEY=your_key_here
-#   JWT_SECRET_KEY=a_strong_random_secret
-#   POSTGRES_PASSWORD=a_db_password
+# 配置 PostgreSQL、JWT 与模型 API Key
 
-# Start all services
 docker compose up -d --build
 ```
 
-On Windows PowerShell:
+访问：
 
-```powershell
-Copy-Item .env.example .env
-# Edit .env with your values
-docker compose up -d --build
+```text
+http://localhost
 ```
 
-### Access
-
-| Service | URL |
-|---------|-----|
-| **Application** | http://localhost |
-| **API Docs (Swagger)** | http://localhost/api/docs |
-| **Prometheus** | http://localhost:9090 |
-
-> AI features (plan generation, AI coach, weekly reports) require a valid `ANTHROPIC_API_KEY`. Without it, the rule-based fallback generates basic reports.
-
-## Environment Variables
-
-See `.env.example` for all options. Key variables:
-
-| Variable | Purpose |
-|----------|---------|
-| `ANTHROPIC_API_KEY` | Anthropic API key for AI features |
-| `JWT_SECRET_KEY` | Secret for signing JWT tokens (must be strong) |
-| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | Database credentials |
-| `AUTH_COOKIE_PATH` | Refresh cookie path (`/api/auth` in Docker, `/auth` in dev) |
-| `AUTH_COOKIE_SECURE` | Set to `true` for HTTPS (production) |
-| `FRONTEND_ORIGINS` | Comma-separated allowed CORS origins |
-
-## Database Model
-
-```mermaid
-erDiagram
-    users ||--o| fitness_profiles : has
-    users ||--o{ training_plans : owns
-    users ||--o{ workout_sessions : performs
-    users ||--o{ weekly_reports : receives
-    training_plans ||--o{ training_days : contains
-    training_days ||--o{ planned_exercises : schedules
-    exercises ||--o{ planned_exercises : references
-    workout_sessions ||--o{ workout_exercises : contains
-    exercises ||--o{ workout_exercises : references
-    workout_exercises ||--o{ workout_sets : contains
-```
-
-**Key design**: `planned_exercises` (what you should do) and `workout_sessions`/`workout_exercises`/`workout_sets` (what you actually did) are separate — plans can evolve while history remains immutable.
-
-## API Overview
-
-| Module | Endpoints | Auth Required |
-|--------|-----------|---------------|
-| **Auth** | `/api/auth/register`, `/api/auth/login`, `/api/auth/me`, `/api/auth/refresh`, `/api/auth/logout` | Mixed |
-| **Users** | `/api/users/{id}`, `/api/users/{id}/fitness-profile` | Yes |
-| **Exercises** | `/api/exercises`, `/api/exercises/{id}` | No |
-| **Training Plans** | `/api/users/{id}/training-plans`, `/api/training-plans/{id}` | Yes |
-| **Workouts** | `/api/users/{id}/workouts`, `/api/workouts/{sid}/...` | Yes |
-| **Analytics** | `/api/users/{id}/analytics/overview`, `.../weekly`, `.../exercises/{eid}`, `.../muscles` | Yes |
-| **Reports** | `/api/users/{id}/weekly-reports` | Yes |
-| **Chat** | `/api/chat` | Yes |
-
-Full interactive docs: http://localhost/api/docs
-
-## Testing
-
-```bash
-# Backend unit tests
-python -m pytest -q
-
-# Frontend pipeline
-cd frontend
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
-cd ..
-
-# End-to-end smoke test (requires running services)
-python scripts/smoke_test.py
-```
-
-## Project Structure
-
-```
-FitPilot/
-├── api/                  # FastAPI routes, dependencies, schemas
-├── agents/               # CoachAgent, PlanAgent, ProgressAgent, orchestrator
-├── core/                 # Intent recognizer, JWT security
-├── services/             # Business logic: auth, plans, workouts, analytics, reports
-├── database/             # SQLAlchemy models, repositories, Alembic migrations
-├── memory/               # Redis + ChromaDB conversation memory
-├── monitor/              # Performance monitoring
-├── evaluation/           # LLM-as-Judge evaluation framework
-├── mcp/                  # MCP tool manager, knowledge base
-├── frontend/             # Next.js app
-│   ├── app/              # Page routes (dashboard, plans, workouts, etc.)
-│   ├── components/       # UI components, auth, layout
-│   ├── lib/api/          # API client with token management
-│   └── tests/            # Vitest tests
-├── config/               # Nginx, Prometheus configs
-├── scripts/              # Smoke test
-├── docker-compose.yml    # Service orchestration
-├── Dockerfile            # Backend image
-└── requirements.txt      # Python dependencies
-```
-
-## Security Design
-
-- **Password hashing**: PBKDF2-SHA256 with 600,000 iterations
-- **Access tokens**: JWT (HS256), 15-minute expiry
-- **Refresh tokens**: JWT + Redis blacklist, 7-day expiry, HttpOnly cookie
-- **Refresh rotation**: Old tokens invalidated on use; replay detection triggers family revocation
-- **Ownership checks**: Every user-owned resource validated against authenticated user
-- **Secrets**: Never committed; `.env` in `.gitignore`
-- **Current status**: MVP — not production-hardened. No TLS, email verification, or OAuth.
-
-## Known Limitations
-
-- Requires a valid Anthropic API key for AI features
-- No email verification
-- No password recovery flow
-- No OAuth / social login
-- No MFA
-- No async task queue (Celery)
-- No production TLS configuration
-- Docker build may be slow on unstable networks
-
-## Roadmap
-
-- Email verification and password recovery
-- Background job processing (Celery)
-- Mobile client
-- Advanced exercise analytics (1RM estimation, volume progression)
-- Production deployment guide (TLS, cloud volumes, monitoring alerts)
+---
 
 ## License
 
-MIT
+This project is intended for learning, portfolio demonstration, and non-commercial research use.
