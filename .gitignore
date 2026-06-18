@@ -96,3 +96,13 @@ desktop.ini
 *.bak
 *.tmp
 *.swp
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+frontend/*.tsbuildinfo
+frontend/coverage/
