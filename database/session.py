@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://fitpilot:fitpilot_dev_password@localhost:5432/fitpilot",
+    "postgresql+asyncpg://fitpilot:0000@localhost:5432/fitpilot",
 )
 
 engine = create_async_engine(DATABASE_URL, echo=False, pool_size=10, max_overflow=20)

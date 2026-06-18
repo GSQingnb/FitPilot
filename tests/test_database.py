@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # Use test database URL or default to local
 TEST_DB_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://fitpilot:fitpilot_dev_password@localhost:5432/fitpilot",
+    "postgresql+asyncpg://fitpilot:0000@localhost:5432/fitpilot",
 )
 
 
