@@ -27,6 +27,17 @@ from anthropic import AsyncAnthropic
 
 from core.intent_recognizer import IntentCategory, IntentRecognizer
 
+
+def _extract_text(response) -> str:
+    """Safely extract concatenated text from all text-type content blocks."""
+    parts = []
+    for block in getattr(response, "content", []):
+        if getattr(block, "type", None) == "text":
+            t = getattr(block, "text", None)
+            if t:
+                parts.append(str(t))
+    return "".join(parts)
+
 logger = logging.getLogger(__name__)
 
 
@@ -128,7 +139,7 @@ Agent 响应: {response}
                 model=self._model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = _extract_text(resp)
             s, e = raw.find("{"), raw.rfind("}") + 1
             data = json.loads(raw[s:e])
             return QualityScores(

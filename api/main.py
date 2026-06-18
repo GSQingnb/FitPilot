@@ -52,10 +52,12 @@ _evaluator    = None
 def _anthropic_cfg() -> Dict[str, Any]:
     key = os.getenv("ANTHROPIC_API_KEY", "")
     if not key:
-        raise RuntimeError("未设置 ANTHROPIC_API_KEY")
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
+    # LLM_MODEL takes priority over ANTHROPIC_MODEL for runtime overrides
+    model = os.getenv("LLM_MODEL") or os.getenv("ANTHROPIC_MODEL") or "deepseek-v4-flash"
     cfg: Dict[str, Any] = {
         "api_key":  key,
-        "model":    os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
+        "model":    model,
     }
     base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip()
     if base_url:

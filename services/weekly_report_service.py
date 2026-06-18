@@ -197,12 +197,13 @@ class WeeklyReportService:
         client = AsyncAnthropic(**kwargs)
 
         prompt = self._build_prompt(current, previous)
+        from core.llm_client import _extract_text
         resp = await client.messages.create(
             model=self._model, max_tokens=2048, temperature=0.3,
             messages=[{"role": "user", "content": prompt}],
             timeout=90.0,
         )
-        raw = resp.content[0].text
+        raw = _extract_text(resp).text
         # Parse
         text = raw.strip()
         if text.startswith("```"):

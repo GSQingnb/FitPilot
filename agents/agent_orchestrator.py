@@ -173,6 +173,7 @@ class BaseAgent:
             )
 
     async def _call_llm(self, req: Request) -> str:
+        from core.llm_client import LLMClient, _extract_text
         def _clean(s: str) -> str:
             return s.encode("utf-8", errors="ignore").decode("utf-8")
 
@@ -188,7 +189,8 @@ class BaseAgent:
             system=self.system_prompt,
             messages=messages,
         )
-        return resp.content[0].text
+        result = _extract_text(resp)
+        return result.text or "抱歉，AI 助手未能生成回复，请稍后重试。"
 
 
 class CoachAgent(BaseAgent):

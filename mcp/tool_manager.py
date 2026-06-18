@@ -26,6 +26,17 @@ from anthropic import AsyncAnthropic
 logger = logging.getLogger(__name__)
 
 
+def _extract_text(response) -> str:
+    """Safely extract concatenated text from all text-type content blocks."""
+    parts = []
+    for block in getattr(response, "content", []):
+        if getattr(block, "type", None) == "text":
+            t = getattr(block, "text", None)
+            if t:
+                parts.append(str(t))
+    return "".join(parts)
+
+
 # ── 数据结构 ──────────────────────────────────────────────────────────────────
 
 class CircuitState(Enum):
@@ -269,7 +280,7 @@ class MCPToolManager:
                 model=self._model, max_tokens=256, temperature=0.3,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = _extract_text(resp)
             s, e = raw.find("["), raw.rfind("]") + 1
             queries = json.loads(raw[s:e])
             # 原始查询也保留，去重
@@ -348,7 +359,7 @@ class MCPToolManager:
                 model=self._model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = _extract_text(resp)
             s, e = raw.find("["), raw.rfind("]") + 1
             order: List[int] = json.loads(raw[s:e])
             reranked = [items[i] for i in order if 0 <= i < len(items)]

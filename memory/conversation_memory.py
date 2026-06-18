@@ -27,6 +27,17 @@ from anthropic import AsyncAnthropic
 logger = logging.getLogger(__name__)
 
 
+def _extract_text(response) -> str:
+    """Safely extract concatenated text from all text-type content blocks."""
+    parts = []
+    for block in getattr(response, "content", []):
+        if getattr(block, "type", None) == "text":
+            t = getattr(block, "text", None)
+            if t:
+                parts.append(str(t))
+    return "".join(parts)
+
+
 class MsgRole(Enum):
     USER      = "user"
     ASSISTANT = "assistant"
@@ -173,8 +184,11 @@ class MemoryManager:
                 model=self._model, max_tokens=512, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = _extract_text(resp)
             s, e = raw.find("{"), raw.rfind("}") + 1
+            if s < 0 or e <= s:
+                logger.warning("Failed to parse profile JSON from LLM response")
+                return
             profile_data = json.loads(raw[s:e])
 
             doc_id = f"{user_id}_profile_{conv_id}"
@@ -252,7 +266,7 @@ class MemoryManager:
                 model=self._model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            summary = self._safe_text(resp.content[0].text).strip()
+            summary = self._safe_text(_extract_text(resp)).strip()
         except Exception:
             summary = f"对话包含 {len(to_compress)} 条消息（摘要生成失败）"
 

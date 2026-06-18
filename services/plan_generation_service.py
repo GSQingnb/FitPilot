@@ -192,7 +192,7 @@ class PlanGenerationService:
 规则: 只用候选动作。days={profile['weekly_frequency']} 天。组数2-4组。返回纯JSON不带```标记。"""
 
     async def _call_llm(self, prompt: str) -> str:
-        from anthropic import AsyncAnthropic
+        from core.llm_client import _extract_text
         resp = await self._client.messages.create(
             model=self._model,
             max_tokens=4096,
@@ -200,7 +200,7 @@ class PlanGenerationService:
             messages=[{"role": "user", "content": prompt}],
             timeout=self.LLM_TIMEOUT_S,
         )
-        return resp.content[0].text
+        return _extract_text(resp).text or "{}"
 
     def _parse_response(self, raw: str) -> GeneratedPlan:
         """Parse LLM output into GeneratedPlan. Handles common formatting issues."""
