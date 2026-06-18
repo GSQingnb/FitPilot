@@ -341,3 +341,64 @@ def test_tool_manager_imports():
     assert CircuitState.CLOSED.value == "closed"
     assert CircuitState.OPEN.value == "open"
     assert CircuitState.HALF_OPEN.value == "half_open"
+
+
+# ── IntentRecognizer cache regression tests ──────────────────────────────────
+
+class TestIntentRecognizerCache:
+    def test_init_creates_cache(self):
+        from core.intent_recognizer import IntentRecognizer
+        r = IntentRecognizer(api_key="fake_key")
+        assert hasattr(r, "_cache"), "_cache was not initialized in __init__"
+        assert isinstance(r._cache, dict)
+        assert len(r._cache) == 0
+
+    def test_cache_hits_and_misses_initialized(self):
+        from core.intent_recognizer import IntentRecognizer
+        r = IntentRecognizer(api_key="fake_key")
+        assert r.cache_hits == 0
+        assert r.cache_misses == 0
+
+    def test_threshold_initialized(self):
+        from core.intent_recognizer import IntentRecognizer
+        r = IntentRecognizer(api_key="fake_key")
+        assert r.threshold == 0.5
+
+    def test_tpl_embeddings_initialized(self):
+        from core.intent_recognizer import IntentRecognizer
+        r = IntentRecognizer(api_key="fake_key")
+        assert isinstance(r._tpl_embeddings, dict)
+
+    def test_embedding_disabled_with_base_url(self):
+        from core.intent_recognizer import IntentRecognizer
+        r = IntentRecognizer(api_key="fk", base_url="https://api.deepseek.com/anthropic")
+        assert r._embedding_enabled is False
+
+    def test_embedding_enabled_without_base_url(self):
+        from core.intent_recognizer import IntentRecognizer
+        r = IntentRecognizer(api_key="fk", base_url=None)
+        assert r._embedding_enabled is True
+
+    def test_pattern_recognize_works_without_llm(self):
+        from core.intent_recognizer import IntentRecognizer
+        r = IntentRecognizer(api_key="fake_key")
+        result = r._pattern_recognize("卧推有哪些动作要点")
+        assert "intent" in result
+        assert "confidence" in result
+
+    def test_two_instances_independent_caches(self):
+        from core.intent_recognizer import IntentRecognizer
+        r1 = IntentRecognizer(api_key="fk1")
+        r2 = IntentRecognizer(api_key="fk2")
+        r1._cache["test"] = True
+        assert "test" not in r2._cache
+
+    def test_cache_key_stable(self):
+        from core.intent_recognizer import IntentRecognizer
+        r = IntentRecognizer(api_key="fk")
+        assert r._cache_key("卧推要点") == r._cache_key("卧推要点")
+
+    def test_cache_key_different_for_different_messages(self):
+        from core.intent_recognizer import IntentRecognizer
+        r = IntentRecognizer(api_key="fk")
+        assert r._cache_key("卧推要点") != r._cache_key("深蹲怎么练")

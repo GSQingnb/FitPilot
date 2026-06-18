@@ -112,6 +112,17 @@ class IntentRecognizer:
         self.cache_hits   = 0
         self.cache_misses = 0
 
+    @staticmethod
+    def _extract_text(response) -> str:
+        """Safely extract text from messages.create response across all content blocks."""
+        parts = []
+        for block in getattr(response, "content", []):
+            if getattr(block, "type", None) == "text":
+                t = getattr(block, "text", None)
+                if t:
+                    parts.append(str(t))
+        return "".join(parts)
+
     # ── 公开接口 ──────────────────────────────────────────────────────────────
 
     async def recognize(
@@ -215,7 +226,7 @@ class IntentRecognizer:
                 temperature=0.1,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = self._extract_text(resp)
             s, e = raw.find("{"), raw.rfind("}") + 1
             data = json.loads(raw[s:e])
             try:
@@ -309,8 +320,10 @@ class IntentRecognizer:
                 model=self.model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = self._extract_text(resp)
             s, e = raw.find("{"), raw.rfind("}") + 1
+            if s < 0 or e <= s:
+                return self._empty_entities()
             return json.loads(raw[s:e])
         except Exception:
             return {"goal":[],"experience_level":[],"weekly_frequency":[],"session_duration":[],
