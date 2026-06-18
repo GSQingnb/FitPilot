@@ -1,9 +1,9 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useAuth } from "@/components/auth/auth-provider"
 import { getCurrentWorkout, startWorkout, addSet as apiAddSet, deleteSet, completeWorkout, cancelWorkout, type WorkoutSessionDetail, type WorkoutExercise, type WorkoutSet } from "@/lib/api/workouts"
-import { listPlans } from "@/lib/api/plans"
+import { listPlans, getPlan, type TrainingPlanDetail } from "@/lib/api/plans"
 import { PageHeader } from "@/components/shared/page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -13,48 +13,131 @@ import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/shared/empty-state"
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton"
 import { ErrorState } from "@/components/shared/error-state"
-import { Loader2, Plus, Trash2, CheckCircle2, Play, SkipForward, XCircle, Dumbbell } from "lucide-react"
+import { ApiError } from "@/lib/api/client"
+import { Loader2, Plus, Trash2, CheckCircle2, Play, SkipForward, XCircle, Dumbbell, AlertCircle } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 export default function CurrentWorkoutPage() {
   const { user } = useAuth()
   const userId = user?.id || ""
+  const router = useRouter()
   const queryClient = useQueryClient()
-  const [startPlanId, setStartPlanId] = useState("")
-  const [startDayId, setStartDayId] = useState("")
+
+  // Workout form state
+  const [selectedPlanId, setSelectedPlanId] = useState("")
+  const [selectedDayId, setSelectedDayId] = useState("")
+  const [startError, setStartError] = useState("")
   const [confirmComplete, setConfirmComplete] = useState(false)
   const [workoutNotes, setWorkoutNotes] = useState("")
   const [perceivedDifficulty, setPerceivedDifficulty] = useState(7)
 
-  const { data: workout, isLoading, error } = useQuery({ queryKey: ["currentWorkout", userId], queryFn: () => getCurrentWorkout(userId), enabled: !!userId })
-  const { data: plansData } = useQuery({ queryKey: ["trainingPlans", userId], queryFn: () => listPlans(userId, "active"), enabled: !!userId && !workout })
+  const { data: workout, isLoading, error } = useQuery({
+    queryKey: ["currentWorkout", userId], queryFn: () => getCurrentWorkout(userId), enabled: !!userId,
+  })
 
-  const startMutation = useMutation({ mutationFn: () => startWorkout(userId, startPlanId, startDayId), onSuccess: () => queryClient.invalidateQueries({ queryKey: ["currentWorkout"] }) })
-  const completeMutation = useMutation({ mutationFn: () => completeWorkout(workout!.id, workoutNotes, perceivedDifficulty), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["currentWorkout"] }); queryClient.invalidateQueries({ queryKey: ["workoutHistory"] }); queryClient.invalidateQueries({ queryKey: ["analytics"] }); setConfirmComplete(false) } })
-  const cancelMutation = useMutation({ mutationFn: () => cancelWorkout(workout!.id), onSuccess: () => queryClient.invalidateQueries({ queryKey: ["currentWorkout"] }) })
+  // Get the active plan summary (no days)
+  const { data: plansData } = useQuery({
+    queryKey: ["trainingPlans", userId],
+    queryFn: () => listPlans(userId, "active"),
+    enabled: !!userId && !workout,
+  })
+
+  const activePlanSummary = plansData?.items?.[0]
+
+  // Fetch full plan detail to get real training day UUIDs
+  const { data: planDetail, isLoading: planLoading } = useQuery<TrainingPlanDetail>({
+    queryKey: ["planDetail", activePlanSummary?.id],
+    queryFn: () => getPlan(activePlanSummary!.id),
+    enabled: !!activePlanSummary?.id && !workout,
+  })
+
+  // Auto-select the plan and its first training day when detail loads
+  useEffect(() => {
+    if (planDetail?.id && planDetail.days?.length) {
+      setSelectedPlanId(planDetail.id)
+      setSelectedDayId(planDetail.days[0].id)
+    }
+  }, [planDetail])
+
+  const startMutation = useMutation({
+    mutationFn: () => startWorkout(userId, selectedPlanId, selectedDayId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["currentWorkout"] })
+      setStartError("")
+    },
+    onError: (e: unknown) => {
+      if (e instanceof ApiError) {
+        if (e.status === 401) { router.replace("/login"); return }
+        if (e.status === 409) { setStartError("A workout is already in progress."); return }
+        if (e.status === 422) { setStartError("Invalid training plan or training day."); return }
+        setStartError(e.detail || e.message)
+      } else {
+        setStartError("Failed to start workout.")
+      }
+    },
+  })
+
+  const completeMutation = useMutation({
+    mutationFn: () => completeWorkout(workout!.id, workoutNotes, perceivedDifficulty),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["currentWorkout"] })
+      queryClient.invalidateQueries({ queryKey: ["workoutHistory"] })
+      queryClient.invalidateQueries({ queryKey: ["analytics"] })
+      setConfirmComplete(false)
+    },
+  })
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelWorkout(workout!.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["currentWorkout"] }),
+  })
 
   if (isLoading) return <LoadingSkeleton />
   if (error) return <ErrorState title="Failed to load workout" />
 
+  // ── No active workout → show start form ──────────────────────────────────
   if (!workout) {
-    const activePlan = plansData?.items?.[0]
+    const days = planDetail?.days || []
+    const canStart = !!selectedPlanId && !!selectedDayId && !startMutation.isPending && !planLoading
+
     return (
       <div className="flex flex-col gap-6 p-4 md:p-6">
         <PageHeader title="Start Workout" description="Begin a new training session" />
         <Card className="max-w-lg mx-auto w-full">
           <CardHeader><CardTitle className="text-lg">Start New Workout</CardTitle></CardHeader>
           <CardContent className="flex flex-col gap-4">
-            {activePlan ? (
+            {planLoading ? (
+              <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin size-6" /></div>
+            ) : activePlanSummary ? (
               <>
-                <div><Label>Active Plan</Label><p className="text-sm font-medium">{activePlan.name}</p></div>
-                <div><Label htmlFor="day">Training Day</Label>
-                  <select id="day" className="w-full border rounded-md p-2 text-sm" value={startDayId} onChange={e => setStartDayId(e.target.value)}>
+                <div>
+                  <Label>Active Plan</Label>
+                  <p className="text-sm font-medium">{activePlanSummary.name}</p>
+                </div>
+                <div>
+                  <Label htmlFor="day">Training Day</Label>
+                  <select
+                    id="day"
+                    className="w-full border rounded-md p-2 text-sm"
+                    value={selectedDayId}
+                    onChange={e => setSelectedDayId(e.target.value)}
+                  >
                     <option value="">Select a day...</option>
-                    <option value="any">Day 1</option>
+                    {days.map((day) => (
+                      <option key={day.id} value={day.id}>
+                        Day {day.day_index}: {day.title}
+                      </option>
+                    ))}
                   </select>
                 </div>
-                <Button onClick={() => startMutation.mutate()} disabled={!startDayId || startMutation.isPending} className="w-full">
-                  {startMutation.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}<Play className="mr-2 size-4" />Start Workout
+                {startError && (
+                  <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-md p-2">
+                    <AlertCircle className="size-4 shrink-0" />{startError}
+                  </div>
+                )}
+                <Button onClick={() => startMutation.mutate()} disabled={!canStart} className="w-full">
+                  {startMutation.isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Play className="mr-2 size-4" />}
+                  Start Workout
                 </Button>
               </>
             ) : (
@@ -66,6 +149,7 @@ export default function CurrentWorkoutPage() {
     )
   }
 
+  // ── Workout in progress → show tracking UI ────────────────────────────────
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
       <PageHeader title="Current Workout" description={`Started ${new Date(workout.started_at).toLocaleTimeString()}`} actions={

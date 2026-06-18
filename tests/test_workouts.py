@@ -10,7 +10,7 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-TEST_DB_URL = "postgresql+asyncpg://fitpilot:fitpilot_dev_password@localhost:5432/fitpilot"
+TEST_DB_URL = "postgresql+asyncpg://fitpilot:0000@localhost:5432/fitpilot"
 
 
 @pytest_asyncio.fixture
